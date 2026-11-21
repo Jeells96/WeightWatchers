@@ -247,6 +247,16 @@ button { font-family: var(--font); cursor: pointer; border: none; background: no
 .set-hint { font-size: 12px; color: var(--ink-3); line-height: 1.4; }
 .set-hint.warn { color: var(--amber); font-weight: 600; }
 .set-hint.ok { color: var(--good); font-weight: 600; }
+.bias-line { margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--accent-ink); }
+.corr-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.corr-row:last-child { border-bottom: none; }
+.corr-main { flex: 1; min-width: 0; }
+.corr-name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.corr-sub { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+.corr-right { display: flex; flex-direction: column; align-items: center; }
+.corr-input { width: 58px; text-align: center; font-size: 17px; font-weight: 800; border: 1.5px solid var(--line); border-radius: 10px; padding: 6px; background: var(--input-bg); color: var(--accent-ink); }
+.corr-input:focus { border-color: var(--brand-400); background: var(--input-bg-focus); outline: none; }
+.corr-arrow { font-size: 10px; color: var(--ink-3); font-weight: 700; margin-top: 2px; }
 .app-foot { text-align: center; color: var(--ink-3); font-size: 12px; padding: 20px 0 6px; }
 
 /* ---------- Switch ---------- */

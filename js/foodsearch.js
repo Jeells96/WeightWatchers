@@ -3,13 +3,8 @@
 import { h, icon, sheet, toast, fmt } from "./ui.js";
 import { searchLocal, searchOpenFoodFacts, searchUSDA, lookupBarcode, finalizeItem, foodCategories, foodsInCategory } from "./foods.js";
 import { pointsFromNutrition } from "./points.js";
-import { state, mutate, dayLog, todayKey, getPointsOverride, setPointsOverride, clearPointsOverride } from "./state.js";
-
-// Points to show for a food, honoring the user's saved calibration.
-function displayPoints(item) {
-  const ov = getPointsOverride(item);
-  return ov != null ? ov : item.points;
-}
+import { state, mutate, dayLog, todayKey } from "./state.js";
+import { effectivePoints, calibratedEntry, saveCalibration, removeByKey, calKey, biasValue } from "./calibrations.js";
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },
@@ -134,9 +129,8 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
   }
 
   function foodRow(item) {
-    const ov = getPointsOverride(item);
-    const pts = item.zero ? 0 : (ov != null ? ov : item.points);
-    const edited = ov != null;
+    const pts = effectivePoints(item);
+    const edited = calibratedEntry(item) != null;
     return h("button", { class: "food-row", onClick: () => openDetail(item) },
       h("div", { class: "food-main" },
         h("div", { class: "food-name" }, item.name),
@@ -167,8 +161,15 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
     let zero = item.zero;
     const n = item.nutrition || {};
     const calculated = () => (item.points ?? pointsFromNutrition(n) ?? 0);
-    let custom = getPointsOverride(item);           // saved calibration, or null
-    const perServing = () => (zero ? 0 : (custom != null ? custom : calculated()));
+    const hasEntry = () => calibratedEntry(item) != null;
+    // Per-serving points: exact correction if one exists, else calculated + the
+    // shared adjustment (so new foods benefit from everyone's corrections).
+    const perServing = () => {
+      if (zero) return 0;
+      const e = calibratedEntry(item);
+      if (e) return e.entered;
+      return Math.max(0, Math.round(calculated() + biasValue()));
+    };
 
     const ptsEl = h("div", { class: "detail-pts" });
     function recompute() {
@@ -182,16 +183,18 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
       qtyEl,
       h("button", { class: "step", onClick: () => { qty = +(qty + 0.5).toFixed(1); qtyEl.textContent = qty; recompute(); } }, "+"));
 
-    // Editable Points value (per serving) — saved so it matches WW next time.
+    // Editable Points value (per serving) — saved to the shared pool so it
+    // matches next time, for everyone.
     const ptsField = h("input", { class: "pts-edit-input", type: "number", inputmode: "numeric", min: "0", value: String(perServing()) });
     const ptsStatus = h("div", { class: "pts-edit-status" });
     function refreshStatus() {
       ptsField.value = String(perServing());
+      const e = calibratedEntry(item);
       ptsStatus.replaceChildren(
-        custom != null
-          ? h("span", { class: "edited-tag" }, `Your value · calculated ${calculated()}`)
-          : h("span", {}, `Calculated from nutrition${zero ? " · ZeroPoint" : ""}`),
-        custom != null ? h("button", { class: "link-btn", onClick: () => { clearPointsOverride(item); custom = null; refreshStatus(); recompute(); } }, "Reset") : null);
+        e != null
+          ? h("span", { class: "edited-tag" }, `Corrected · calculated ${calculated()}` + (e.by ? ` · by ${e.by}` : ""))
+          : h("span", {}, `Auto-calculated${zero ? " · ZeroPoint" : ""}`),
+        e != null ? h("button", { class: "link-btn", onClick: () => { removeByKey(calKey(item)); refreshStatus(); recompute(); } }, "Reset") : null);
     }
     const editRow = h("div", { class: "pts-edit" },
       h("div", { class: "pts-edit-top" },
@@ -201,8 +204,8 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
     ptsField.addEventListener("change", () => {
       const v = parseInt(ptsField.value, 10);
       if (!Number.isFinite(v) || v < 0) { refreshStatus(); return; }
-      if (v === calculated() && !zero) { clearPointsOverride(item); custom = null; }
-      else { setPointsOverride(item, v); custom = v; if (zero) zero = false; }
+      if (v === calculated() && !zero) { removeByKey(calKey(item)); }
+      else { if (zero) zero = false; saveCalibration(item, v, zero); }
       refreshStatus(); recompute();
     });
 
@@ -214,7 +217,7 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
 
     const zeroToggle = h("label", { class: "toggle-row" },
       h("span", {}, "ZeroPoint food"),
-      toggle(zero, (on) => { zero = on; if (on) custom = null; refreshStatus(); recompute(); }));
+      toggle(zero, (on) => { zero = on; refreshStatus(); recompute(); }));
 
     recompute(); refreshStatus();
     const body2 = h("div", { class: "detail" },

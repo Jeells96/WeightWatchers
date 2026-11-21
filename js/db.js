@@ -12,6 +12,7 @@ import {
   serverTimestamp,
   arrayUnion,
   arrayRemove,
+  deleteField,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig, PROFILES_COLLECTION } from "./config.js";
 
@@ -79,6 +80,19 @@ export async function hashPin(pin) {
   const data = new TextEncoder().encode("ww-pin:" + String(pin));
   const buf = await crypto.subtle.digest("SHA-256", data);
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ---- Shared food-points corrections (pooled across everyone) ------------
+const CALIB_ID = "__calibrations__";
+function calibRef() { return doc(db, PROFILES_COLLECTION, CALIB_ID); }
+export function watchCalibrations(cb) {
+  return onSnapshot(calibRef(), (s) => cb(s.exists() ? s.data() : { entries: {} }));
+}
+export async function writeCalibration(key, entry) {
+  await setDoc(calibRef(), { entries: { [key]: entry } }, { merge: true });
+}
+export async function deleteCalibration(key) {
+  await updateDoc(calibRef(), { ["entries." + key]: deleteField() });
 }
 
 export { serverTimestamp, arrayUnion, arrayRemove };

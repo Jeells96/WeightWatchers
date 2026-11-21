@@ -41,6 +41,14 @@ export function renderSettings() {
     numRow(`Goal weight (${unit})`, goal.goalWeight, (v) => setGoal("goalWeight", v), true),
   ]));
 
+  // Points corrections
+  wrap.append(h("div", { class: "card nav-card", onClick: () => window.__nav("corrections") },
+    h("div", { class: "nav-ico" }, icon("edit")),
+    h("div", { class: "nav-main" },
+      h("div", { class: "nav-title" }, "Points corrections"),
+      h("div", { class: "nav-sub" }, "See and adjust every food correction")),
+    icon("chevron", "chev")));
+
   // Food database (USDA key) — a key is baked into the app; this field is only
   // for optionally overriding it on this device.
   const keyInput = h("input", { class: "f-input", type: "text", autocapitalize: "none", autocorrect: "off",

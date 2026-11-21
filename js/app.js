@@ -7,7 +7,9 @@ import { renderWeight } from "./views/weight.js";
 import { renderActivity } from "./views/activity.js";
 import { renderSettings } from "./views/settings.js";
 import { renderFriends } from "./views/friends.js";
+import { renderCorrections } from "./views/corrections.js";
 import { openAddFood } from "./foodsearch.js";
+import { initCalibrations } from "./calibrations.js";
 
 const root = document.getElementById("app");
 let current = "myday";
@@ -32,6 +34,8 @@ function renderApp() {
 
   if (current === "friends") {
     scroll.append(renderFriends());
+  } else if (current === "corrections") {
+    scroll.append(renderCorrections());
   } else {
     const tab = TABS.find((t) => t.key === current) || TABS[0];
     if (tab.render) scroll.append(tab.render());
@@ -46,7 +50,7 @@ function renderApp() {
         h("div", { class: "fab" }, icon("plus"))));
       return;
     }
-    const on = t.key === current || (t.key === "settings" && current === "friends");
+    const on = t.key === current || (t.key === "settings" && (current === "friends" || current === "corrections"));
     const badge = t.key === "settings" && state.data && (state.data.requestsIn || []).length
       ? h("span", { class: "tab-badge" }, String(state.data.requestsIn.length)) : null;
     bar.append(h("button", {
@@ -70,6 +74,7 @@ function currentMealGuess() {
 async function boot() {
   if (new URLSearchParams(location.search).get("demo") === "1" && !state.data) {
     loadDemo();
+    initCalibrations(() => { if (state.data) renderApp(); });
     renderApp();
     return;
   }
@@ -78,8 +83,10 @@ async function boot() {
     root.replaceChildren(h("div", { class: "gate loading" }, h("div", { class: "spinner" })));
     try { await signIn(id); } catch {}
   }
-  if (state.data) { renderApp(); }
-  else { renderGate(root); }
+  if (state.data) {
+    initCalibrations(() => { if (state.data) renderApp(); });
+    renderApp();
+  } else { renderGate(root); }
 }
 
 // Re-render live when Firestore pushes updates (but not mid-scroll jank: cheap).
