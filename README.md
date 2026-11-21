@@ -124,7 +124,8 @@ js/
   db.js                 Firebase init + Firestore helpers
   state.js              app state, budget math, Firestore sync
   points.js             Points calculation
-  foods.js              Open Food Facts search + barcode + common foods
+  foods-db.js           built-in database of ~180 common foods (by category)
+  foods.js              local search/browse + Open Food Facts + barcode
   foodsearch.js         the add-food experience (search/scan/serving)
   ui.js                 DOM helpers, icons, budget ring, weight chart
   app.js                router + bottom tab bar

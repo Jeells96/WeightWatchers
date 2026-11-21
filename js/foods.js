@@ -1,31 +1,13 @@
-// Food search + barcode lookup via Open Food Facts (free, no key, CORS-enabled),
-// plus a small built-in list of common foods for instant results offline.
+// Food search + barcode lookup. A large built-in database (foods-db.js) powers
+// instant, offline, high-quality results; Open Food Facts supplements it for
+// branded/scanned products.
 import { pointsFromNutrition, looksZeroPoint } from "./points.js";
+import { CATEGORIES } from "./foods-db.js";
 
 const OFF = "https://world.openfoodfacts.org";
 
-// A tiny starter list so search feels instant and works without a connection.
-// Values are per listed serving.
-const COMMON = [
-  { name: "Banana", brand: "", serving: "1 medium", grams: 118, nutrition: { calories: 105, fat: 0.4, satFat: 0.1, carbs: 27, sugar: 14, protein: 1.3, fiber: 3.1 } },
-  { name: "Apple", brand: "", serving: "1 medium", grams: 182, nutrition: { calories: 95, fat: 0.3, satFat: 0, carbs: 25, sugar: 19, protein: 0.5, fiber: 4.4 } },
-  { name: "Egg, large", brand: "", serving: "1 egg", grams: 50, nutrition: { calories: 72, fat: 4.8, satFat: 1.6, carbs: 0.4, sugar: 0.2, protein: 6.3, fiber: 0 } },
-  { name: "Chicken breast, grilled", brand: "", serving: "4 oz", grams: 112, nutrition: { calories: 187, fat: 4, satFat: 1.1, carbs: 0, sugar: 0, protein: 35, fiber: 0 } },
-  { name: "White rice, cooked", brand: "", serving: "1 cup", grams: 158, nutrition: { calories: 205, fat: 0.4, satFat: 0.1, carbs: 45, sugar: 0.1, protein: 4.3, fiber: 0.6 } },
-  { name: "Whole milk", brand: "", serving: "1 cup", grams: 244, nutrition: { calories: 149, fat: 8, satFat: 4.6, carbs: 12, sugar: 12, protein: 7.7, fiber: 0 } },
-  { name: "Plain nonfat Greek yogurt", brand: "", serving: "170 g", grams: 170, nutrition: { calories: 100, fat: 0, satFat: 0, carbs: 6, sugar: 6, protein: 17, fiber: 0 } },
-  { name: "Avocado", brand: "", serving: "1/2 fruit", grams: 68, nutrition: { calories: 114, fat: 10.5, satFat: 1.5, carbs: 6, sugar: 0.2, protein: 1.3, fiber: 4.6 } },
-  { name: "Peanut butter", brand: "", serving: "2 tbsp", grams: 32, nutrition: { calories: 188, fat: 16, satFat: 3.3, carbs: 6, sugar: 3, protein: 8, fiber: 1.6 } },
-  { name: "Oatmeal, cooked", brand: "", serving: "1 cup", grams: 234, nutrition: { calories: 166, fat: 3.6, satFat: 0.6, carbs: 28, sugar: 1, protein: 6, fiber: 4 } },
-  { name: "Cheddar cheese", brand: "", serving: "1 oz", grams: 28, nutrition: { calories: 115, fat: 9.4, satFat: 6, carbs: 0.9, sugar: 0.1, protein: 7, fiber: 0 } },
-  { name: "Slice of bread, whole wheat", brand: "", serving: "1 slice", grams: 28, nutrition: { calories: 80, fat: 1.1, satFat: 0.2, carbs: 14, sugar: 1.6, protein: 4, fiber: 2 } },
-  { name: "Coffee, black", brand: "", serving: "1 cup", grams: 240, nutrition: { calories: 2, fat: 0, satFat: 0, carbs: 0, sugar: 0, protein: 0.3, fiber: 0 } },
-  { name: "Olive oil", brand: "", serving: "1 tbsp", grams: 14, nutrition: { calories: 119, fat: 13.5, satFat: 1.9, carbs: 0, sugar: 0, protein: 0, fiber: 0 } },
-  { name: "Broccoli, steamed", brand: "", serving: "1 cup", grams: 156, nutrition: { calories: 55, fat: 0.6, satFat: 0, carbs: 11, sugar: 2, protein: 3.7, fiber: 5 } },
-];
-
 function finalizeItem(it) {
-  const zero = looksZeroPoint(it.name);
+  const zero = it.zero != null ? it.zero : looksZeroPoint(it.name);
   let pts = pointsFromNutrition(it.nutrition);
   if (pts == null) pts = 0;
   if (zero) pts = 0;
@@ -36,6 +18,7 @@ function finalizeItem(it) {
     serving: it.serving || "1 serving",
     grams: it.grams || null,
     nutrition: it.nutrition || {},
+    category: it.category || "",
     zero,
     points: pts,
   };
@@ -45,11 +28,58 @@ function cryptoId() {
   return "f_" + Math.random().toString(36).slice(2, 10);
 }
 
-export function searchCommon(query) {
+// ---- Built-in database --------------------------------------------------
+// Expand the compact tuples once into finalized items with computed Points.
+const NUTR_KEYS = ["calories", "fat", "satFat", "carbs", "sugar", "protein", "fiber"];
+const FOOD_DB = [];
+const CATEGORY_INDEX = [];
+for (const cat of CATEGORIES) {
+  const items = [];
+  for (const row of cat.items) {
+    const [name, serving, grams, ...rest] = row;
+    const zero = rest[7] ? 1 : 0;
+    const vals = rest.slice(0, 7); // cal, fat, sat, carb, sugar, pro, fib
+    const nutrition = {};
+    NUTR_KEYS.forEach((k, i) => { if (vals[i] != null) nutrition[k] = vals[i]; });
+    const item = finalizeItem({ id: "db_" + slugName(name), name, serving, grams, nutrition, zero, category: cat.name });
+    FOOD_DB.push(item);
+    items.push(item);
+  }
+  CATEGORY_INDEX.push({ name: cat.name, icon: cat.icon, items });
+}
+
+function slugName(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+
+export function foodCategories() {
+  return CATEGORY_INDEX.map((c) => ({ name: c.name, icon: c.icon, count: c.items.length }));
+}
+export function foodsInCategory(name) {
+  const c = CATEGORY_INDEX.find((x) => x.name === name);
+  return c ? c.items.slice() : [];
+}
+
+// Relevance-ranked search of the built-in database.
+export function searchLocal(query) {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  return COMMON.filter((f) => f.name.toLowerCase().includes(q)).map(finalizeItem);
+  const qWords = q.split(/\s+/).filter(Boolean);
+  const scored = [];
+  for (const item of FOOD_DB) {
+    const name = item.name.toLowerCase();
+    let s = 0;
+    if (name === q) s = 100;
+    else if (name.startsWith(q)) s = 85;
+    else if (name.split(/[^a-z0-9]+/).some((w) => w.startsWith(q))) s = 65;
+    else if (name.includes(q)) s = 45;
+    else if (qWords.length > 1 && qWords.every((w) => name.includes(w))) s = 35;
+    if (s > 0) scored.push({ item, s });
+  }
+  scored.sort((a, b) => b.s - a.s || a.item.name.length - b.item.name.length);
+  return scored.map((x) => x.item);
 }
+
+// Back-compat alias used elsewhere.
+export const searchCommon = searchLocal;
 
 // Parse an Open Food Facts product into our item shape.
 function fromOFF(p) {

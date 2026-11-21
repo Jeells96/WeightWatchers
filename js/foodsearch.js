@@ -1,7 +1,7 @@
 // The add-food experience: search + barcode + serving adjustment, shared by
 // the My Day screen and the Food tab.
 import { h, icon, sheet, toast, fmt } from "./ui.js";
-import { searchCommon, searchOpenFoodFacts, lookupBarcode, finalizeItem } from "./foods.js";
+import { searchLocal, searchOpenFoodFacts, lookupBarcode, finalizeItem, foodCategories, foodsInCategory } from "./foods.js";
 import { pointsFromNutrition } from "./points.js";
 import { state, mutate, dayLog, todayKey } from "./state.js";
 
@@ -68,22 +68,59 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
   let searchToken = 0;
   async function doSearch(q) {
     const query = q.trim();
-    if (!query) { showList(state.data.recents || [], "Start typing to search foods."); return; }
+    if (!query) { showBrowse(); return; }
     const token = ++searchToken;
-    const local = searchCommon(query);
-    results.replaceChildren(...local.map(foodRow), h("div", { class: "searching" }, "Searching database…"));
+    // Instant local results first.
+    const local = searchLocal(query);
+    const header = (label) => h("div", { class: "results-group" }, label);
+    const render = (localItems, remoteItems, searching) => {
+      const nodes = [];
+      if (localItems.length) { nodes.push(header("Common foods")); localItems.forEach((it) => nodes.push(foodRow(it))); }
+      if (searching) nodes.push(h("div", { class: "searching" }, h("span", { class: "mini-spin" }), "Searching barcodes & brands…"));
+      else if (remoteItems && remoteItems.length) { nodes.push(header("Packaged & branded")); remoteItems.forEach((it) => nodes.push(foodRow(it))); }
+      if (!localItems.length && !searching && (!remoteItems || !remoteItems.length)) {
+        nodes.push(emptyState("No matches. Scan the barcode, or use Quick add to enter points yourself."));
+      }
+      results.replaceChildren(...nodes);
+    };
+    render(local, null, true);
     try {
       const remote = await searchOpenFoodFacts(query);
       if (token !== searchToken) return;
       const seen = new Set(local.map((x) => x.name.toLowerCase()));
-      const merged = [...local, ...remote.filter((x) => !seen.has(x.name.toLowerCase()))];
-      if (!merged.length) { results.replaceChildren(emptyState("No matches. Try a different term or use Quick add.")); return; }
-      results.replaceChildren(...merged.map(foodRow));
+      const filtered = remote.filter((x) => !seen.has(x.name.toLowerCase()));
+      render(local, filtered, false);
     } catch {
       if (token !== searchToken) return;
-      if (!local.length) results.replaceChildren(emptyState("Couldn't reach the food database. Use Quick add to enter points manually."));
-      else results.replaceChildren(...local.map(foodRow));
+      render(local, [], false);
     }
+  }
+
+  // Browse-by-category when the search box is empty.
+  function showBrowse() {
+    const nodes = [];
+    const recents = state.data.recents || [];
+    if (recents.length) {
+      nodes.push(h("div", { class: "results-group" }, "Recent"));
+      recents.slice(0, 5).forEach((it) => nodes.push(foodRow(it)));
+    }
+    nodes.push(h("div", { class: "results-group" }, "Browse foods"));
+    const grid = h("div", { class: "cat-grid" });
+    foodCategories().forEach((c) => grid.append(
+      h("button", { class: "cat-card", onClick: () => openCategory(c.name) },
+        h("span", { class: "cat-emoji" }, c.icon),
+        h("span", { class: "cat-name" }, c.name),
+        h("span", { class: "cat-count" }, `${c.count}`))));
+    nodes.push(grid);
+    results.replaceChildren(...nodes);
+  }
+
+  function openCategory(name) {
+    const items = foodsInCategory(name);
+    const nodes = [h("button", { class: "cat-back", onClick: () => showBrowse() }, icon("back"), "All categories"),
+      h("div", { class: "results-group" }, name)];
+    items.forEach((it) => nodes.push(foodRow(it)));
+    results.replaceChildren(...nodes);
   }
 
   function foodRow(item) {
