@@ -5,10 +5,13 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   collection,
   getDocs,
   onSnapshot,
   serverTimestamp,
+  arrayUnion,
+  arrayRemove,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig, PROFILES_COLLECTION } from "./config.js";
 
@@ -57,4 +60,25 @@ export function watchProfile(id, cb) {
   });
 }
 
-export { serverTimestamp };
+// Merge a few top-level fields into a profile (own or a friend's) without
+// overwriting the whole document.
+export async function patchProfile(id, fields) {
+  await updateDoc(profileRef(id), { ...fields, updatedAt: serverTimestamp() });
+}
+
+// Append/remove items from an array field (supports dotted nested paths).
+export async function arrayPush(id, path, value) {
+  await updateDoc(profileRef(id), { [path]: arrayUnion(value) });
+}
+export async function arrayPull(id, path, value) {
+  await updateDoc(profileRef(id), { [path]: arrayRemove(value) });
+}
+
+// SHA-256 hex of a PIN (so the raw PIN is never stored).
+export async function hashPin(pin) {
+  const data = new TextEncoder().encode("ww-pin:" + String(pin));
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export { serverTimestamp, arrayUnion, arrayRemove };

@@ -325,9 +325,9 @@ button { font-family: var(--font); cursor: pointer; border: none; background: no
   background: radial-gradient(130% 90% at 50% 0%, #14457a 0%, var(--brand-700) 45%, var(--brand-900) 100%); color: #fff; }
 .gate.loading { background: var(--bg); }
 .wordmark { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.wordmark .ww { font-size: 54px; font-weight: 900; letter-spacing: -2px; line-height: .9;
-  background: #fff; color: var(--brand-700); width: 92px; height: 92px; border-radius: 26px; display: grid; place-items: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.wordmark .ww { font-size: 44px; font-weight: 900; letter-spacing: -1.5px; line-height: 1;
+  background: #fff; color: var(--brand-700); width: 96px; height: 96px; border-radius: 26px; display: grid; place-items: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25); overflow: hidden; }
 .wordmark .ww-name { font-size: 15px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; opacity: .95; }
 .gate-sub { font-size: 16px; font-weight: 600; opacity: .9; margin-top: 4px; }
 .gate-list { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
@@ -362,6 +362,57 @@ button { font-family: var(--font); cursor: pointer; border: none; background: no
   opacity: 0; transition: .3s; box-shadow: var(--shadow-lg); max-width: 86vw; text-align: center; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ---------- Tab badge ---------- */
+.tab-ico-wrap { position: relative; display: grid; place-items: center; }
+.tab-badge { position: absolute; top: -4px; right: -9px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 999px; display: grid; place-items: center; padding: 0 4px; }
+
+/* ---------- Subpage header (Friends) ---------- */
+.subpage-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 2px; }
+.subpage-title { font-size: 20px; font-weight: 800; }
+
+/* ---------- Settings nav card ---------- */
+.nav-card { display: flex; align-items: center; gap: 12px; }
+.nav-ico { width: 40px; height: 40px; border-radius: 12px; background: #eef4fb; color: var(--brand-500); display: grid; place-items: center; }
+.nav-ico .ico { width: 22px; height: 22px; }
+.nav-main { flex: 1; }
+.nav-title { font-weight: 700; font-size: 16px; }
+.nav-sub { font-size: 13px; color: var(--ink-3); }
+.nav-badge { background: var(--danger); color: #fff; font-size: 12px; font-weight: 800; min-width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; padding: 0 6px; }
+
+/* ---------- Friends ---------- */
+.add-friend-row { display: flex; gap: 10px; align-items: stretch; }
+.add-friend-row .f-input { flex: 1; }
+.add-friend-row .btn-primary { flex: 0 0 auto; }
+.friend-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.friend-row:last-child { border-bottom: none; }
+.friend-row.tappable:active { opacity: .6; }
+.avatar.sm { width: 40px; height: 40px; font-size: 17px; flex: 0 0 auto; }
+.friend-name { flex: 1; font-weight: 600; font-size: 15px; }
+.req-actions { display: flex; gap: 6px; }
+.mini-btn { padding: 8px 14px; border-radius: 10px; font-weight: 700; font-size: 13px; }
+.mini-btn.accept { background: var(--good); color: #fff; }
+.mini-btn.decline { background: #eef2f7; color: var(--ink-2); }
+.pending-tag { font-size: 12px; font-weight: 700; color: var(--amber); background: #fdf3e1; padding: 4px 10px; border-radius: 999px; }
+.share-gear { width: 34px; height: 34px; border-radius: 50%; background: #eef4fb; color: var(--brand-500); display: grid; place-items: center; }
+.share-gear .ico { width: 19px; height: 19px; }
+.share-body { padding: 0 16px 18px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.share-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); font-weight: 600; font-size: 14px; }
+.friend-view { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.friend-view .gate.loading { background: transparent; min-height: 200px; }
+
+/* ---------- PIN pad ---------- */
+.pinpad-wrap { padding: 4px 20px 22px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.pin-head { font-size: 16px; font-weight: 700; }
+.pin-dots { display: flex; gap: 16px; }
+.pin-dot { width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--brand-400); transition: .12s; }
+.pin-dot.on { background: var(--brand-500); border-color: var(--brand-500); }
+.pin-err { color: var(--danger); font-size: 13px; font-weight: 600; height: 16px; }
+.pinpad { display: grid; grid-template-columns: repeat(3, 72px); gap: 14px; }
+.pin-key { height: 66px; border-radius: 50%; background: var(--card); font-size: 26px; font-weight: 600; box-shadow: var(--shadow); display: grid; place-items: center; color: var(--ink); }
+.pin-key:active { background: #e8eef5; }
+.pin-key.del { background: transparent; box-shadow: none; color: var(--ink-2); }
+.pin-input { letter-spacing: 10px; text-align: center; }
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0a1420; --card: #131f2e; --ink: #eaf1f8; --ink-2: #9fb0c2; --ink-3: #6f8296;
@@ -376,4 +427,7 @@ button { font-family: var(--font); cursor: pointer; border: none; background: no
   .tabbar { background: rgba(14,24,36,.9); }
   .fab { border-color: var(--card); }
   .ring-card { background: linear-gradient(180deg, #131f2e, #15202f); }
+  .nav-ico, .share-gear, .pin-key:active, .mini-btn.decline { background: #1d3450; }
+  .pin-key, .share-item, .nav-card { background: var(--card); }
+  .pending-tag { background: #3a2f17; }
 }

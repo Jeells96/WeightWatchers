@@ -17,6 +17,16 @@ export function renderSettings() {
       h("div", { class: "profile-name" }, state.data.name),
       h("div", { class: "profile-sub" }, "Tap below to switch profile"))));
 
+  // Friends
+  const pending = (state.data.requestsIn || []).length;
+  wrap.append(h("div", { class: "card nav-card", onClick: () => window.__nav("friends") },
+    h("div", { class: "nav-ico" }, icon("star")),
+    h("div", { class: "nav-main" },
+      h("div", { class: "nav-title" }, "Friends"),
+      h("div", { class: "nav-sub" }, pending ? `${pending} new request${pending > 1 ? "s" : ""}` : `${(state.data.friends || []).length} connected`)),
+    pending ? h("span", { class: "nav-badge" }, String(pending)) : null,
+    icon("chevron", "chev")));
+
   // Points budget
   wrap.append(section("Points budget", [
     numRow("Daily Points budget", s.dailyBudget, (v) => setSetting("dailyBudget", v)),

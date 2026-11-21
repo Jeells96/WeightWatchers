@@ -1,6 +1,6 @@
 // Central app state: the loaded profile, local persistence of "who's signed in",
 // and all the derived budget math. Writes are debounced to Firestore.
-import { loadProfile, saveProfile, slug, watchProfile } from "./db.js";
+import { loadProfile, saveProfile, slug, watchProfile, arrayPush, arrayPull, patchProfile, hashPin } from "./db.js";
 
 const LS_KEY = "ww_current_profile";
 
@@ -31,10 +31,25 @@ export function weekStartKey(d = new Date()) {
   return todayKey(copy);
 }
 
+// What a profile can share with a friend.
+export const SHARE_FIELDS = [
+  { key: "budget", label: "Daily Points budget & remaining" },
+  { key: "points", label: "What I eat (food log)" },
+  { key: "weight", label: "Current weight & goal" },
+  { key: "weighIns", label: "Weight history / trend" },
+  { key: "activity", label: "Activity Points" },
+  { key: "water", label: "Water" },
+];
+export function defaultShare() {
+  // Sensible default: share the motivating stuff, not the detailed food log.
+  return { budget: true, points: false, weight: true, weighIns: true, activity: true, water: false };
+}
+
 export function defaultProfile(name) {
   return {
     name: name.trim(),
     createdAt: Date.now(),
+    pinHash: null,
     settings: {
       dailyBudget: 23,
       weeklyBudget: 35,
@@ -50,6 +65,9 @@ export function defaultProfile(name) {
     log: {},                  // { "YYYY-MM-DD": { meals, activities, water } }
     favorites: [],
     recents: [],
+    friends: [],              // [{id, name, share:{...}}]  (share = what I give them)
+    requestsIn: [],           // [{fromId, fromName}]
+    requestsOut: [],          // [{toId, toName}]
   };
 }
 
@@ -94,6 +112,10 @@ export function loadDemo() {
       },
     },
     favorites: [], recents: [],
+    pinHash: null,
+    friends: [{ id: "mike", name: "Mike", share: { budget: true, weight: true, weighIns: true, activity: true, points: false, water: false } }],
+    requestsIn: [{ fromId: "jen", fromName: "Jen" }],
+    requestsOut: [{ toId: "dave", toName: "Dave" }],
   };
   setCurrentId(null);
   emit();
@@ -118,12 +140,137 @@ export async function signIn(id) {
   emit();
 }
 
-export async function createProfile(name) {
+export async function createProfile(name, pinHash = null) {
   const id = slug(name);
   const prof = defaultProfile(name);
+  prof.pinHash = pinHash;
   await saveProfile(id, prof);
   await signIn(id);
   return id;
+}
+
+// Verify a PIN against a stored hash (used at the sign-in gate).
+export async function checkPin(profile, pin) {
+  if (!profile || !profile.pinHash) return true; // no PIN set => open
+  return (await hashPin(pin)) === profile.pinHash;
+}
+
+// ---- Friends ------------------------------------------------------------
+export function myName() { return state.data?.name || ""; }
+
+export async function sendFriendRequest(targetName) {
+  if (state.id === "__demo__") return { ok: false, msg: "Not available in preview" };
+  const targetId = slug(targetName);
+  if (!targetId) return { ok: false, msg: "Enter a name" };
+  if (targetId === state.id) return { ok: false, msg: "That's you!" };
+  const target = await loadProfile(targetId);
+  if (!target) return { ok: false, msg: `No profile named "${targetName}"` };
+  if ((state.data.friends || []).some((f) => f.id === targetId)) return { ok: false, msg: "Already friends" };
+  if ((state.data.requestsOut || []).some((r) => r.toId === targetId)) return { ok: false, msg: "Request already sent" };
+  // If they already requested me, accept instead.
+  if ((state.data.requestsIn || []).some((r) => r.fromId === targetId)) {
+    await acceptRequest({ fromId: targetId, fromName: target.name });
+    return { ok: true, msg: `You're now friends with ${target.name}` };
+  }
+  await arrayPush(targetId, "requestsIn", { fromId: state.id, fromName: state.data.name });
+  mutate((d) => { d.requestsOut = [...(d.requestsOut || []), { toId: targetId, toName: target.name }]; });
+  await flush();
+  return { ok: true, msg: `Request sent to ${target.name}` };
+}
+
+export async function acceptRequest(req) {
+  if (state.id === "__demo__") {
+    mutate((d) => {
+      d.friends = [...(d.friends || []), { id: req.fromId, name: req.fromName, share: defaultShare() }];
+      d.requestsIn = (d.requestsIn || []).filter((r) => r.fromId !== req.fromId);
+    });
+    return;
+  }
+  const myEntry = { id: state.id, name: state.data.name, share: defaultShare() };
+  // Add to their friends + clear their outgoing request.
+  await arrayPush(req.fromId, "friends", myEntry);
+  await arrayPull(req.fromId, "requestsOut", { toId: state.id, toName: state.data.name });
+  // Add to my friends + clear my incoming request.
+  mutate((d) => {
+    d.friends = [...(d.friends || []).filter((f) => f.id !== req.fromId), { id: req.fromId, name: req.fromName, share: defaultShare() }];
+    d.requestsIn = (d.requestsIn || []).filter((r) => r.fromId !== req.fromId);
+  });
+  await flush();
+}
+
+export async function declineRequest(req) {
+  if (state.id !== "__demo__") await arrayPull(req.fromId, "requestsOut", { toId: state.id, toName: state.data.name });
+  mutate((d) => { d.requestsIn = (d.requestsIn || []).filter((r) => r.fromId !== req.fromId); });
+  await flush();
+}
+
+export async function cancelOutgoing(req) {
+  if (state.id !== "__demo__") await arrayPull(req.toId, "requestsIn", { fromId: state.id, fromName: state.data.name });
+  mutate((d) => { d.requestsOut = (d.requestsOut || []).filter((r) => r.toId !== req.toId); });
+  await flush();
+}
+
+export function setFriendShare(friendId, share) {
+  mutate((d) => {
+    const f = (d.friends || []).find((x) => x.id === friendId);
+    if (f) f.share = share;
+  });
+}
+
+export async function removeFriend(friendId) {
+  if (state.id === "__demo__") { mutate((d) => { d.friends = (d.friends || []).filter((f) => f.id !== friendId); }); return; }
+  // Remove me from their friends list (read-modify-write, exact object unknown).
+  try {
+    const them = await loadProfile(friendId);
+    if (them && Array.isArray(them.friends)) {
+      await patchProfile(friendId, { friends: them.friends.filter((f) => f.id !== state.id) });
+    }
+  } catch {}
+  mutate((d) => { d.friends = (d.friends || []).filter((f) => f.id !== friendId); });
+  await flush();
+}
+
+// Build a view of a friend's data filtered to what THEY share with me.
+export async function loadFriendView(friendId) {
+  const them = await loadProfile(friendId);
+  if (!them) return null;
+  const theirEntry = (them.friends || []).find((f) => f.id === state.id);
+  const share = theirEntry?.share || {};
+  const today = todayKey();
+  const log = them.log?.[today];
+  const out = { id: friendId, name: them.name, share, unit: them.settings?.units === "metric" ? "kg" : "lb" };
+  if (share.budget) {
+    const used = sumDay(log);
+    out.dailyBudget = them.settings?.dailyBudget ?? null;
+    out.usedToday = used;
+    out.remaining = (them.settings?.dailyBudget ?? 0) - used;
+  }
+  if (share.points) out.meals = log?.meals || null;
+  if (share.weight) {
+    out.currentWeight = latestWeightOf(them);
+    out.startWeight = them.goal?.startWeight ?? null;
+    out.goalWeight = them.goal?.goalWeight ?? null;
+  }
+  if (share.weighIns) out.weighIns = [...(them.weighIns || [])].sort((a, b) => a.date.localeCompare(b.date));
+  if (share.activity) out.activityToday = (log?.activities || []).reduce((s, a) => s + (a.points || 0), 0);
+  if (share.water) out.water = log?.water || 0;
+  return out;
+}
+
+function sumDay(log) {
+  if (!log?.meals) return 0;
+  let t = 0;
+  for (const meal of Object.values(log.meals)) for (const it of meal) t += it.points * (it.qty || 1);
+  return t;
+}
+function latestWeightOf(p) {
+  const w = p.weighIns || [];
+  if (!w.length) return p.goal?.startWeight ?? null;
+  return [...w].sort((a, b) => a.date.localeCompare(b.date)).at(-1).weight;
+}
+
+export function pendingCount() {
+  return (state.data?.requestsIn || []).length;
 }
 
 export function signOut() {
@@ -147,6 +294,7 @@ export function mutate(fn) {
 
 export async function flush() {
   if (!state.id || !state.data) return;
+  if (state.id === "__demo__") { state.dirty = false; return; } // preview: never persist
   const snapshot = JSON.parse(JSON.stringify(state.data));
   await saveProfile(state.id, snapshot);
   state.dirty = false;

@@ -1,6 +1,6 @@
-import { h, icon, toast, fmt } from "../ui.js";
-import { listProfiles, slug } from "../db.js";
-import { signIn, createProfile, mutate, state, flush, todayKey } from "../state.js";
+import { h, icon, toast, fmt, sheet } from "../ui.js";
+import { listProfiles, slug, loadProfile, hashPin } from "../db.js";
+import { signIn, createProfile, mutate, state, flush, todayKey, checkPin } from "../state.js";
 
 const logo = () => h("div", { class: "wordmark big", html:
   `<span class="ww">WW</span><span class="ww-name">Weight&nbsp;Watchers</span>` });
@@ -28,7 +28,17 @@ export async function renderGate(root) {
 
   root.replaceChildren(screen);
 
-  async function enter(id) {
+  async function enter(id, name) {
+    let prof = null;
+    try { prof = await loadProfile(id); } catch {}
+    if (prof && prof.pinHash) {
+      promptPin(prof, async () => {
+        root.replaceChildren(h("div", { class: "gate loading" }, h("div", { class: "spinner" })));
+        await signIn(id);
+        window.__boot();
+      });
+      return;
+    }
     root.replaceChildren(h("div", { class: "gate loading" }, h("div", { class: "spinner" })));
     await signIn(id);
     window.__boot();
@@ -37,16 +47,52 @@ export async function renderGate(root) {
   function startCreate() { renderSetup(root); }
 }
 
+// A reusable 4-digit PIN entry sheet. onOk() runs when the PIN matches.
+export function promptPin(profile, onOk) {
+  let entry = "";
+  const dots = h("div", { class: "pin-dots" });
+  const err = h("div", { class: "pin-err" }, "");
+  const body = h("div", { class: "pinpad-wrap" },
+    h("div", { class: "pin-head" }, `Enter ${profile.name}'s PIN`), dots, err);
+  renderDots();
+  const pad = h("div", { class: "pinpad" });
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"];
+  keys.forEach((k) => {
+    if (k === "") { pad.append(h("span", {})); return; }
+    pad.append(h("button", {
+      class: "pin-key" + (k === "del" ? " del" : ""),
+      onClick: () => press(k),
+    }, k === "del" ? icon("back") : k));
+  });
+  body.append(pad);
+  const sh = sheet("PIN", body, { full: false });
+
+  function renderDots() {
+    dots.replaceChildren(...[0, 1, 2, 3].map((i) => h("span", { class: "pin-dot" + (i < entry.length ? " on" : "") })));
+  }
+  async function press(k) {
+    err.textContent = "";
+    if (k === "del") { entry = entry.slice(0, -1); renderDots(); return; }
+    if (entry.length >= 4) return;
+    entry += k; renderDots();
+    if (entry.length === 4) {
+      const ok = await checkPin(profile, entry);
+      if (ok) { sh.close(); onOk(); }
+      else { err.textContent = "Wrong PIN, try again"; entry = ""; setTimeout(renderDots, 120); navigator.vibrate?.(60); }
+    }
+  }
+}
+
 // Multi-step setup for a brand-new profile.
 export function renderSetup(root, { editing = false } = {}) {
   const data = {
-    name: "", sex: "", units: "imperial",
+    name: "", pin: "", pin2: "", sex: "", units: "imperial",
     heightFt: "", heightIn: "", heightCm: "",
     startWeight: "", goalWeight: "",
     dailyBudget: 23, weeklyBudget: 35,
   };
   let step = 0;
-  const steps = ["name", "body", "goal", "budget"];
+  const steps = ["name", "pin", "body", "goal", "budget"];
 
   const screen = h("div", { class: "setup" });
   root.replaceChildren(screen);
@@ -61,6 +107,7 @@ export function renderSetup(root, { editing = false } = {}) {
 
     const body = h("div", { class: "setup-body" });
     if (steps[step] === "name") stepName(body);
+    else if (steps[step] === "pin") stepPin(body);
     else if (steps[step] === "body") stepBody(body);
     else if (steps[step] === "goal") stepGoal(body);
     else if (steps[step] === "budget") stepBudget(body);
@@ -78,6 +125,27 @@ export function renderSetup(root, { editing = false } = {}) {
       inp,
       h("button", { class: "btn-primary big", onClick: () => { if (!data.name.trim()) { toast("Enter your name"); return; } next(); } }, "Continue"));
     setTimeout(() => inp.focus(), 250);
+  }
+
+  function stepPin(body) {
+    const p1 = h("input", { class: "f-input big-input pin-input", type: "tel", inputmode: "numeric", maxlength: "4", placeholder: "• • • •", value: data.pin });
+    const p2 = h("input", { class: "f-input big-input pin-input", type: "tel", inputmode: "numeric", maxlength: "4", placeholder: "• • • •", value: data.pin2 });
+    const clean = (v) => v.replace(/\D/g, "").slice(0, 4);
+    p1.addEventListener("input", () => { data.pin = clean(p1.value); p1.value = data.pin; });
+    p2.addEventListener("input", () => { data.pin2 = clean(p2.value); p2.value = data.pin2; });
+    body.append(
+      h("h1", { class: "setup-h" }, "Set a 4-digit PIN"),
+      h("p", { class: "setup-p" }, "You'll enter this to open your profile — including on another phone. It keeps your account private."),
+      h("label", { class: "f-label" }, "PIN"), p1,
+      h("label", { class: "f-label" }, "Confirm PIN"), p2,
+      h("button", {
+        class: "btn-primary big", onClick: () => {
+          if (!/^\d{4}$/.test(data.pin)) { toast("PIN must be 4 digits"); return; }
+          if (data.pin !== data.pin2) { toast("PINs don't match"); return; }
+          next();
+        },
+      }, "Continue"));
+    setTimeout(() => p1.focus(), 250);
   }
 
   function stepBody(body) {
@@ -138,7 +206,14 @@ export function renderSetup(root, { editing = false } = {}) {
   async function finish() {
     const name = data.name.trim();
     if (!name) { toast("Enter your name"); step = 0; draw(); return; }
+    if (!/^\d{4}$/.test(data.pin) || data.pin !== data.pin2) { toast("Set a matching 4-digit PIN"); step = 1; draw(); return; }
+    // Don't overwrite someone else's existing profile with the same name.
+    try {
+      const existing = await loadProfile(slug(name));
+      if (existing) { toast(`"${name}" is already taken — try a different name`); step = 0; draw(); return; }
+    } catch {}
     screen.replaceChildren(h("div", { class: "gate loading" }, h("div", { class: "spinner" })));
+    const pinHash = await hashPin(data.pin);
     let heightIn = null;
     if (data.units === "imperial") {
       const ft = parseInt(data.heightFt, 10) || 0, inch = parseInt(data.heightIn, 10) || 0;
@@ -147,7 +222,7 @@ export function renderSetup(root, { editing = false } = {}) {
       const cm = parseFloat(data.heightCm);
       if (Number.isFinite(cm)) heightIn = +(cm / 2.54).toFixed(1);
     }
-    await createProfile(name);
+    await createProfile(name, pinHash);
     mutate((d) => {
       d.settings.units = data.units;
       d.settings.sex = data.sex;

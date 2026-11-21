@@ -6,6 +6,7 @@ import { renderFood } from "./views/food.js";
 import { renderWeight } from "./views/weight.js";
 import { renderActivity } from "./views/activity.js";
 import { renderSettings } from "./views/settings.js";
+import { renderFriends } from "./views/friends.js";
 import { openAddFood } from "./foodsearch.js";
 
 const root = document.getElementById("app");
@@ -29,8 +30,12 @@ function renderApp() {
   const screen = h("div", { class: "app-shell" });
   const scroll = h("div", { class: "scroll", id: "scroll" });
 
-  const tab = TABS.find((t) => t.key === current) || TABS[0];
-  if (tab.render) scroll.append(tab.render());
+  if (current === "friends") {
+    scroll.append(renderFriends());
+  } else {
+    const tab = TABS.find((t) => t.key === current) || TABS[0];
+    if (tab.render) scroll.append(tab.render());
+  }
   screen.append(scroll);
 
   // bottom tab bar
@@ -41,10 +46,13 @@ function renderApp() {
         h("div", { class: "fab" }, icon("plus"))));
       return;
     }
+    const on = t.key === current || (t.key === "settings" && current === "friends");
+    const badge = t.key === "settings" && state.data && (state.data.requestsIn || []).length
+      ? h("span", { class: "tab-badge" }, String(state.data.requestsIn.length)) : null;
     bar.append(h("button", {
-      class: "tab" + (t.key === current ? " on" : ""),
+      class: "tab" + (on ? " on" : ""),
       onClick: () => { current = t.key; renderApp(); },
-    }, icon(t.icon), h("span", { class: "tab-lbl" }, t.label)));
+    }, h("div", { class: "tab-ico-wrap" }, icon(t.icon), badge), h("span", { class: "tab-lbl" }, t.label)));
   });
   screen.append(bar);
 
