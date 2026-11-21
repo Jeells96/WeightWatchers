@@ -1,50 +1,56 @@
 import { h, icon, toast, fmt, sheet } from "../ui.js";
-import { listProfiles, slug, loadProfile, hashPin } from "../db.js";
+import { slug, loadProfile, hashPin } from "../db.js";
 import { signIn, createProfile, mutate, state, flush, todayKey, checkPin } from "../state.js";
 
 const logo = () => h("div", { class: "wordmark big", html:
   `<span class="ww">WW</span><span class="ww-name">Weight&nbsp;Watchers</span>` });
 
-export async function renderGate(root) {
-  root.replaceChildren(h("div", { class: "gate loading" }, h("div", { class: "spinner" })));
-  let profiles = [];
-  try { profiles = await listProfiles(); } catch {}
-
+// First screen: just Log in or Create account. No account names are shown.
+export function renderGate(root) {
   const screen = h("div", { class: "gate" });
   screen.append(logo());
-  screen.append(h("div", { class: "gate-sub" }, "Who's tracking today?"));
-
-  const list = h("div", { class: "gate-list" });
-  profiles.forEach((p) => {
-    list.append(h("button", { class: "gate-profile", onClick: () => enter(p.id) },
-      h("div", { class: "avatar" }, (p.name || "?").charAt(0).toUpperCase()),
-      h("div", { class: "gate-pname" }, p.name),
-      icon("chevron", "chev")));
-  });
-  screen.append(list);
-
-  screen.append(h("button", { class: "btn-primary big add-profile", onClick: () => startCreate() },
-    icon("plus"), profiles.length ? "Add another profile" : "Create your profile"));
-
+  screen.append(h("div", { class: "gate-sub" }, "Track your Points, food & weight"));
+  screen.append(h("div", { class: "gate-actions" },
+    h("button", { class: "btn-primary big add-profile", onClick: () => showLogin(root) }, "Log in"),
+    h("button", { class: "btn-gate-ghost", onClick: () => renderSetup(root) }, "Create account")));
   root.replaceChildren(screen);
+}
 
-  async function enter(id, name) {
+// Log in: type your name, then your PIN. Nothing is pre-filled.
+function showLogin(root) {
+  const screen = h("div", { class: "gate" });
+  const nameInput = h("input", { class: "f-input big-input", placeholder: "Your name",
+    autocapitalize: "words", autocomplete: "off", autocorrect: "off" });
+
+  async function submit() {
+    const name = nameInput.value.trim();
+    if (!name) { toast("Enter your name"); return; }
+    cont.disabled = true;
     let prof = null;
-    try { prof = await loadProfile(id); } catch {}
-    if (prof && prof.pinHash) {
-      promptPin(prof, async () => {
-        root.replaceChildren(h("div", { class: "gate loading" }, h("div", { class: "spinner" })));
-        await signIn(id);
-        window.__boot();
-      });
-      return;
-    }
-    root.replaceChildren(h("div", { class: "gate loading" }, h("div", { class: "spinner" })));
-    await signIn(id);
-    window.__boot();
+    try { prof = await loadProfile(slug(name)); } catch {}
+    cont.disabled = false;
+    if (!prof) { toast(`No account found for "${name}"`); return; }
+    const done = async () => {
+      root.replaceChildren(h("div", { class: "gate loading" }, h("div", { class: "spinner" })));
+      await signIn(slug(name));
+      window.__boot();
+    };
+    if (prof.pinHash) promptPin(prof, done);
+    else done();
   }
 
-  function startCreate() { renderSetup(root); }
+  nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  const cont = h("button", { class: "btn-primary big add-profile", onClick: submit }, "Continue");
+
+  screen.append(
+    h("div", { class: "gate-top" }, h("button", { class: "icon-btn ghost", onClick: () => renderGate(root) }, icon("back"))),
+    logo(),
+    h("div", { class: "gate-sub" }, "Log in to your account"),
+    h("div", { class: "gate-form" },
+      h("label", { class: "f-label light" }, "Name"), nameInput, cont,
+      h("button", { class: "btn-gate-ghost", onClick: () => renderSetup(root) }, "Create a new account instead")));
+  root.replaceChildren(screen);
+  setTimeout(() => nameInput.focus(), 250);
 }
 
 // A reusable 4-digit PIN entry sheet. onOk() runs when the PIN matches.
