@@ -14,8 +14,8 @@ export const firebaseConfig = {
 export const PROFILES_COLLECTION = "ww_profiles";
 
 // USDA FoodData Central API key for the big food database (~600k foods).
-// Get a free key (1 min, no card) at: https://fdc.nal.usda.gov/api-key-signup
-// Paste it here, OR enter it in the app under More → Food database (that is
-// saved per-device and overrides this value). "DEMO_KEY" works but is limited
-// to ~30 searches/hour across all users.
-export const USDA_API_KEY = "DEMO_KEY";
+// This is a free, rate-limited key (no billing, no account access) — safe to
+// ship in the app, which is how it has to work for a client-side app anyway.
+// You can regenerate it anytime at https://fdc.nal.usda.gov/api-key-signup.
+// A per-device key entered in More → Food database overrides this value.
+export const USDA_API_KEY = "j69rLqkmqtBhkgcMTbNPW9jCfCPkDWjtDWh7mLQ6";

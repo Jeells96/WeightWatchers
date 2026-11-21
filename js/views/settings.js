@@ -41,23 +41,25 @@ export function renderSettings() {
     numRow(`Goal weight (${unit})`, goal.goalWeight, (v) => setGoal("goalWeight", v), true),
   ]));
 
-  // Food database (USDA key)
+  // Food database (USDA key) — a key is baked into the app; this field is only
+  // for optionally overriding it on this device.
   const keyInput = h("input", { class: "f-input", type: "text", autocapitalize: "none", autocorrect: "off",
-    placeholder: "Paste USDA API key", value: usingDemoKey() ? "" : getUsdaKey() });
+    placeholder: "Optional: override key on this device", value: "" });
   keyInput.addEventListener("change", () => {
     setUsdaKey(keyInput.value);
-    toast(keyInput.value.trim() ? "Food database key saved" : "Reverted to demo key");
+    toast(keyInput.value.trim() ? "Custom key saved on this device" : "Using the built-in key");
+    keyInput.value = "";
     window.__rerender();
   });
   const dbStatus = usingDemoKey()
-    ? h("div", { class: "set-hint warn" }, "Using the shared demo key (limited to ~30 searches/hour). Add your own free key for full search.")
-    : h("div", { class: "set-hint ok" }, "✓ Using your key — full food database search is active.");
+    ? h("div", { class: "set-hint warn" }, "No key configured — using the shared demo key (limited). Add a free key below.")
+    : h("div", { class: "set-hint ok" }, "✓ Full food database active (~600,000 foods).");
   wrap.append(h("div", { class: "card settings-sec" },
     h("div", { class: "card-title" }, "Food database"),
     h("div", { class: "set-row col" },
-      h("div", { class: "set-label" }, "USDA FoodData Central API key"), keyInput,
       dbStatus,
-      h("div", { class: "set-hint" }, "Get a free key in ~1 minute (no credit card) at fdc.nal.usda.gov/api-key-signup, then paste it here. It unlocks ~600,000 foods.")),
+      h("div", { class: "set-hint" }, "A free USDA FoodData Central key is already built in. You only need this field if you want to use your own key on this device (get one at fdc.nal.usda.gov/api-key-signup)."),
+      keyInput),
   ));
 
   // Units & profile
