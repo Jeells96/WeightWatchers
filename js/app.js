@@ -94,6 +94,43 @@ onChange(() => { if (state.data) renderApp(); });
 
 boot();
 
+// ---- Zoom guard ---------------------------------------------------------
+// The app must be viewed/installed at 100% zoom. Warn (dismissibly) if not.
+function zoomPercent() {
+  try {
+    const screenW = Math.min(window.screen.width, window.screen.height);
+    const iw = window.innerWidth || screenW;
+    if (!screenW || !iw) return 100;
+    let pct = (screenW / iw) * 100;
+    const vs = window.visualViewport ? window.visualViewport.scale : 1;
+    if (vs && Math.abs(vs - 1) > 0.02) pct *= vs;
+    return Math.round(pct);
+  } catch { return 100; }
+}
+
+function checkZoom() {
+  const existing = document.querySelector(".zoom-banner");
+  let dismissed = false;
+  try { dismissed = sessionStorage.getItem("ww_zoom_ok") === "1"; } catch {}
+  const pct = zoomPercent();
+  const off = navigator.maxTouchPoints > 0 && Math.abs(pct - 100) > 4;
+  if (!off || dismissed) { if (existing) existing.remove(); return; }
+  if (existing) { existing.querySelector(".zb-text").textContent = bannerText(pct); return; }
+  const banner = h("div", { class: "zoom-banner" },
+    h("div", { class: "zb-ico" }, "⚠️"),
+    h("div", { class: "zb-text" }, bannerText(pct)),
+    h("button", { class: "zb-close", onClick: () => { try { sessionStorage.setItem("ww_zoom_ok", "1"); } catch {} banner.remove(); } }, "✕"));
+  document.body.appendChild(banner);
+}
+function bannerText(pct) {
+  return `Your browser looks zoomed to ~${pct}%. Set Safari to 100% (tap “AA” in the address bar → 100%) before adding to the Home Screen, or the layout won’t fit right.`;
+}
+
+window.addEventListener("resize", checkZoom);
+window.addEventListener("orientationchange", () => setTimeout(checkZoom, 300));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", checkZoom);
+setTimeout(checkZoom, 600);
+
 // Register service worker for offline / installability.
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
