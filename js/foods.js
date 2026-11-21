@@ -7,21 +7,21 @@ const OFF = "https://world.openfoodfacts.org";
 // A tiny starter list so search feels instant and works without a connection.
 // Values are per listed serving.
 const COMMON = [
-  { name: "Banana", brand: "", serving: "1 medium", grams: 118, nutrition: { calories: 105, satFat: 0.1, sugar: 14, protein: 1.3 } },
-  { name: "Apple", brand: "", serving: "1 medium", grams: 182, nutrition: { calories: 95, satFat: 0, sugar: 19, protein: 0.5 } },
-  { name: "Egg, large", brand: "", serving: "1 egg", grams: 50, nutrition: { calories: 72, satFat: 1.6, sugar: 0.2, protein: 6.3 } },
-  { name: "Chicken breast, grilled", brand: "", serving: "4 oz", grams: 112, nutrition: { calories: 187, satFat: 1.1, sugar: 0, protein: 35 } },
-  { name: "White rice, cooked", brand: "", serving: "1 cup", grams: 158, nutrition: { calories: 205, satFat: 0.1, sugar: 0.1, protein: 4.3 } },
-  { name: "Whole milk", brand: "", serving: "1 cup", grams: 244, nutrition: { calories: 149, satFat: 4.6, sugar: 12, protein: 7.7 } },
-  { name: "Plain nonfat Greek yogurt", brand: "", serving: "170 g", grams: 170, nutrition: { calories: 100, satFat: 0, sugar: 6, protein: 17 } },
-  { name: "Avocado", brand: "", serving: "1/2 fruit", grams: 68, nutrition: { calories: 114, satFat: 1.5, sugar: 0.2, protein: 1.3 } },
-  { name: "Peanut butter", brand: "", serving: "2 tbsp", grams: 32, nutrition: { calories: 188, satFat: 3.3, sugar: 3, protein: 8 } },
-  { name: "Oatmeal, cooked", brand: "", serving: "1 cup", grams: 234, nutrition: { calories: 166, satFat: 0.6, sugar: 1, protein: 6 } },
-  { name: "Cheddar cheese", brand: "", serving: "1 oz", grams: 28, nutrition: { calories: 115, satFat: 6, sugar: 0.1, protein: 7 } },
-  { name: "Slice of bread, whole wheat", brand: "", serving: "1 slice", grams: 28, nutrition: { calories: 80, satFat: 0.2, sugar: 1.6, protein: 4 } },
-  { name: "Coffee, black", brand: "", serving: "1 cup", grams: 240, nutrition: { calories: 2, satFat: 0, sugar: 0, protein: 0.3 } },
-  { name: "Olive oil", brand: "", serving: "1 tbsp", grams: 14, nutrition: { calories: 119, satFat: 1.9, sugar: 0, protein: 0 } },
-  { name: "Broccoli, steamed", brand: "", serving: "1 cup", grams: 156, nutrition: { calories: 55, satFat: 0, sugar: 2, protein: 3.7 } },
+  { name: "Banana", brand: "", serving: "1 medium", grams: 118, nutrition: { calories: 105, fat: 0.4, satFat: 0.1, carbs: 27, sugar: 14, protein: 1.3, fiber: 3.1 } },
+  { name: "Apple", brand: "", serving: "1 medium", grams: 182, nutrition: { calories: 95, fat: 0.3, satFat: 0, carbs: 25, sugar: 19, protein: 0.5, fiber: 4.4 } },
+  { name: "Egg, large", brand: "", serving: "1 egg", grams: 50, nutrition: { calories: 72, fat: 4.8, satFat: 1.6, carbs: 0.4, sugar: 0.2, protein: 6.3, fiber: 0 } },
+  { name: "Chicken breast, grilled", brand: "", serving: "4 oz", grams: 112, nutrition: { calories: 187, fat: 4, satFat: 1.1, carbs: 0, sugar: 0, protein: 35, fiber: 0 } },
+  { name: "White rice, cooked", brand: "", serving: "1 cup", grams: 158, nutrition: { calories: 205, fat: 0.4, satFat: 0.1, carbs: 45, sugar: 0.1, protein: 4.3, fiber: 0.6 } },
+  { name: "Whole milk", brand: "", serving: "1 cup", grams: 244, nutrition: { calories: 149, fat: 8, satFat: 4.6, carbs: 12, sugar: 12, protein: 7.7, fiber: 0 } },
+  { name: "Plain nonfat Greek yogurt", brand: "", serving: "170 g", grams: 170, nutrition: { calories: 100, fat: 0, satFat: 0, carbs: 6, sugar: 6, protein: 17, fiber: 0 } },
+  { name: "Avocado", brand: "", serving: "1/2 fruit", grams: 68, nutrition: { calories: 114, fat: 10.5, satFat: 1.5, carbs: 6, sugar: 0.2, protein: 1.3, fiber: 4.6 } },
+  { name: "Peanut butter", brand: "", serving: "2 tbsp", grams: 32, nutrition: { calories: 188, fat: 16, satFat: 3.3, carbs: 6, sugar: 3, protein: 8, fiber: 1.6 } },
+  { name: "Oatmeal, cooked", brand: "", serving: "1 cup", grams: 234, nutrition: { calories: 166, fat: 3.6, satFat: 0.6, carbs: 28, sugar: 1, protein: 6, fiber: 4 } },
+  { name: "Cheddar cheese", brand: "", serving: "1 oz", grams: 28, nutrition: { calories: 115, fat: 9.4, satFat: 6, carbs: 0.9, sugar: 0.1, protein: 7, fiber: 0 } },
+  { name: "Slice of bread, whole wheat", brand: "", serving: "1 slice", grams: 28, nutrition: { calories: 80, fat: 1.1, satFat: 0.2, carbs: 14, sugar: 1.6, protein: 4, fiber: 2 } },
+  { name: "Coffee, black", brand: "", serving: "1 cup", grams: 240, nutrition: { calories: 2, fat: 0, satFat: 0, carbs: 0, sugar: 0, protein: 0.3, fiber: 0 } },
+  { name: "Olive oil", brand: "", serving: "1 tbsp", grams: 14, nutrition: { calories: 119, fat: 13.5, satFat: 1.9, carbs: 0, sugar: 0, protein: 0, fiber: 0 } },
+  { name: "Broccoli, steamed", brand: "", serving: "1 cup", grams: 156, nutrition: { calories: 55, fat: 0.6, satFat: 0, carbs: 11, sugar: 2, protein: 3.7, fiber: 5 } },
 ];
 
 function finalizeItem(it) {
@@ -60,11 +60,12 @@ function fromOFF(p) {
   const servingG = parseFloat(p.serving_quantity) || 100;
   const per100 = {
     calories: nutr["energy-kcal_100g"] ?? nutr["energy-kcal"] ?? null,
-    satFat: nutr["saturated-fat_100g"] ?? null,
-    sugar: nutr["sugars_100g"] ?? null,
-    protein: nutr["proteins_100g"] ?? null,
-    carbs: nutr["carbohydrates_100g"] ?? null,
     fat: nutr["fat_100g"] ?? null,
+    satFat: nutr["saturated-fat_100g"] ?? null,
+    carbs: nutr["carbohydrates_100g"] ?? null,
+    sugar: nutr["sugars_100g"] ?? null,
+    addedSugar: nutr["added-sugars_100g"] ?? null,
+    protein: nutr["proteins_100g"] ?? null,
     fiber: nutr["fiber_100g"] ?? null,
   };
   const f = servingG / 100;

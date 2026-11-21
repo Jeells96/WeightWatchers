@@ -90,13 +90,26 @@ filled with sample data. Nothing is written to Firebase in demo mode.
 
 ## How Points are calculated
 
-WW's exact formula is proprietary and not published. Food Points here use a
-well-known nutrition-based approximation (calories, saturated fat, sugar, protein)
-that lands close to familiar values, with common fruits/veg/lean proteins treated
-as **ZeroPoint**. You can always adjust a food's points or toggle ZeroPoint when
-adding it, and your daily/weekly budgets are whatever you enter in Settings.
-If your wife's plan uses specific numbers, set the daily/weekly budget in Settings
-to match and it'll track exactly.
+WW's exact formula is proprietary and unpublished. Food Points here use an
+independent approximation of the current Points program, per 1 point:
+
+| Nutrient | Effect |
+|---|---|
+| Fat | +1 per 3 g |
+| Saturated fat | +1 per 3 g (on top of fat) |
+| Carbs | +1 per 7 g |
+| Sugar | +1 per 29 g (on top of carbs) |
+| Added sugar | +1 per 8 g (on top of sugar) |
+| Protein | +1 per 19 g |
+| Fiber | −1 per 3 g |
+
+So `points = fat/3 + satFat/3 + carbs/7 + sugar/29 + addedSugar/8 + protein/19 − fiber/3`,
+rounded, floored at 0, with common fruits/veg/lean proteins treated as **ZeroPoint**
+(forced to 0). It lands close to WW's values but won't match to the exact point on
+every food. If only calories are known (rare), it falls back to a simpler estimate.
+You can always adjust a food's points or toggle ZeroPoint when adding it, and your
+daily/weekly budgets are whatever you enter in Settings — set them to match her plan
+and the budget tracks exactly. To re-tune, edit the coefficients in `js/points.js`.
 
 ## Project layout
 
