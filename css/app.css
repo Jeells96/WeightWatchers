@@ -245,6 +245,8 @@ button { font-family: var(--font); cursor: pointer; border: none; background: no
 .set-row.inner { padding: 0; border: none; flex-direction: row; align-items: center; }
 .set-label { font-size: 15px; font-weight: 600; }
 .set-hint { font-size: 12px; color: var(--ink-3); line-height: 1.4; }
+.set-hint.warn { color: var(--amber); font-weight: 600; }
+.set-hint.ok { color: var(--good); font-weight: 600; }
 .app-foot { text-align: center; color: var(--ink-3); font-size: 12px; padding: 20px 0 6px; }
 
 /* ---------- Switch ---------- */
@@ -318,6 +320,15 @@ button { font-family: var(--font); cursor: pointer; border: none; background: no
 .step { width: 34px; height: 34px; border-radius: 50%; background: #eef4fb; color: var(--accent-chip); font-size: 22px; font-weight: 700; display: grid; place-items: center; }
 .qty-val { font-size: 18px; font-weight: 800; min-width: 34px; text-align: center; }
 .toggle-row { display: flex; align-items: center; justify-content: space-between; background: var(--card); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); font-weight: 600; }
+.pts-edit { background: var(--card); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; }
+.pts-edit-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pts-edit-label { font-weight: 600; }
+.pts-edit-input { width: 84px; text-align: center; font-size: 20px; font-weight: 800; border: 1.5px solid var(--line); border-radius: 11px; padding: 8px; background: var(--input-bg); color: var(--accent-ink); }
+.pts-edit-input:focus { border-color: var(--brand-400); background: var(--input-bg-focus); outline: none; }
+.pts-edit-status { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-3); }
+.edited-tag { color: var(--amber); font-weight: 700; }
+.link-btn { color: var(--accent-ink); font-weight: 700; font-size: 13px; }
+.pts-badge.edited { background: #fdf3e1; color: #b8791a; }
 .nutr-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; }
 .nutr-cell { background: var(--card); border-radius: 12px; padding: 10px 6px; text-align: center; box-shadow: var(--shadow); }
 .nutr-val { font-weight: 800; font-size: 15px; }

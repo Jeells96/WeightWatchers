@@ -65,6 +65,7 @@ export function defaultProfile(name) {
     log: {},                  // { "YYYY-MM-DD": { meals, activities, water } }
     favorites: [],
     recents: [],
+    pointsOverrides: {},      // { "<name>|<brand>": points }  user calibrations
     friends: [],              // [{id, name, share:{...}}]  (share = what I give them)
     requestsIn: [],           // [{fromId, fromName}]
     requestsOut: [],          // [{toId, toName}]
@@ -271,6 +272,22 @@ function latestWeightOf(p) {
 
 export function pendingCount() {
   return (state.data?.requestsIn || []).length;
+}
+
+// ---- Per-food Points overrides (calibration) ---------------------------
+export function overrideKey(item) {
+  return slug(item.name) + "|" + slug(item.brand || "");
+}
+export function getPointsOverride(item) {
+  const o = state.data?.pointsOverrides;
+  const k = overrideKey(item);
+  return o && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : null;
+}
+export function setPointsOverride(item, pts) {
+  mutate((d) => { (d.pointsOverrides = d.pointsOverrides || {})[overrideKey(item)] = pts; });
+}
+export function clearPointsOverride(item) {
+  mutate((d) => { if (d.pointsOverrides) delete d.pointsOverrides[overrideKey(item)]; });
 }
 
 export function signOut() {

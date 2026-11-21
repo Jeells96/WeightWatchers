@@ -1,9 +1,15 @@
 // The add-food experience: search + barcode + serving adjustment, shared by
 // the My Day screen and the Food tab.
 import { h, icon, sheet, toast, fmt } from "./ui.js";
-import { searchLocal, searchOpenFoodFacts, lookupBarcode, finalizeItem, foodCategories, foodsInCategory } from "./foods.js";
+import { searchLocal, searchOpenFoodFacts, searchUSDA, lookupBarcode, finalizeItem, foodCategories, foodsInCategory } from "./foods.js";
 import { pointsFromNutrition } from "./points.js";
-import { state, mutate, dayLog, todayKey } from "./state.js";
+import { state, mutate, dayLog, todayKey, getPointsOverride, setPointsOverride, clearPointsOverride } from "./state.js";
+
+// Points to show for a food, honoring the user's saved calibration.
+function displayPoints(item) {
+  const ov = getPointsOverride(item);
+  return ov != null ? ov : item.points;
+}
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },
@@ -76,24 +82,28 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
     const render = (localItems, remoteItems, searching) => {
       const nodes = [];
       if (localItems.length) { nodes.push(header("Common foods")); localItems.forEach((it) => nodes.push(foodRow(it))); }
-      if (searching) nodes.push(h("div", { class: "searching" }, h("span", { class: "mini-spin" }), "Searching barcodes & brands…"));
-      else if (remoteItems && remoteItems.length) { nodes.push(header("Packaged & branded")); remoteItems.forEach((it) => nodes.push(foodRow(it))); }
+      if (searching) nodes.push(h("div", { class: "searching" }, h("span", { class: "mini-spin" }), "Searching the food database…"));
+      else if (remoteItems && remoteItems.length) { nodes.push(header("All foods")); remoteItems.forEach((it) => nodes.push(foodRow(it))); }
       if (!localItems.length && !searching && (!remoteItems || !remoteItems.length)) {
         nodes.push(emptyState("No matches. Scan the barcode, or use Quick add to enter points yourself."));
       }
       results.replaceChildren(...nodes);
     };
     render(local, null, true);
+    // Comprehensive database: USDA first (huge, generic + branded), then
+    // fall back to Open Food Facts if USDA is unavailable or empty.
+    let remote = [];
     try {
-      const remote = await searchOpenFoodFacts(query);
-      if (token !== searchToken) return;
-      const seen = new Set(local.map((x) => x.name.toLowerCase()));
-      const filtered = remote.filter((x) => !seen.has(x.name.toLowerCase()));
-      render(local, filtered, false);
+      remote = await searchUSDA(query);
     } catch {
-      if (token !== searchToken) return;
-      render(local, [], false);
+      try { remote = await searchOpenFoodFacts(query); } catch { remote = []; }
     }
+    if (token !== searchToken) return;
+    if (!remote.length) { try { remote = await searchOpenFoodFacts(query); } catch {} }
+    if (token !== searchToken) return;
+    const seen = new Set(local.map((x) => x.name.toLowerCase()));
+    const filtered = remote.filter((x) => !seen.has(x.name.toLowerCase()));
+    render(local, filtered, false);
   }
 
   // Browse-by-category when the search box is empty.
@@ -124,14 +134,16 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
   }
 
   function foodRow(item) {
-    const isFav = (state.data.favorites || []).some((f) => f.name === item.name && f.brand === item.brand);
+    const ov = getPointsOverride(item);
+    const pts = item.zero ? 0 : (ov != null ? ov : item.points);
+    const edited = ov != null;
     return h("button", { class: "food-row", onClick: () => openDetail(item) },
       h("div", { class: "food-main" },
         h("div", { class: "food-name" }, item.name),
         h("div", { class: "food-sub" }, [item.brand, item.serving].filter(Boolean).join(" · "))),
       h("div", { class: "food-right" },
-        h("div", { class: "pts-badge" + (item.zero ? " zero" : "") }, item.zero ? "0" : String(item.points)),
-        h("div", { class: "pts-word" }, "Points")));
+        h("div", { class: "pts-badge" + (item.zero ? " zero" : "") + (edited ? " edited" : "") }, String(pts)),
+        h("div", { class: "pts-word" }, edited ? "edited" : "Points")));
   }
 
   function showQuickAdd() {
@@ -154,11 +166,14 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
     let qty = 1;
     let zero = item.zero;
     const n = item.nutrition || {};
+    const calculated = () => (item.points ?? pointsFromNutrition(n) ?? 0);
+    let custom = getPointsOverride(item);           // saved calibration, or null
+    const perServing = () => (zero ? 0 : (custom != null ? custom : calculated()));
+
     const ptsEl = h("div", { class: "detail-pts" });
     function recompute() {
-      let base = zero ? 0 : (item.points ?? pointsFromNutrition(n) ?? 0);
       ptsEl.replaceChildren(
-        h("div", { class: "detail-pts-num" }, String(Math.round(base * qty))),
+        h("div", { class: "detail-pts-num" }, String(Math.round(perServing() * qty))),
         h("div", { class: "detail-pts-lbl" }, "Points"));
     }
     const qtyEl = h("div", { class: "qty-val" }, "1");
@@ -166,6 +181,30 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
       h("button", { class: "step", onClick: () => { qty = Math.max(0.5, +(qty - 0.5).toFixed(1)); qtyEl.textContent = qty; recompute(); } }, "–"),
       qtyEl,
       h("button", { class: "step", onClick: () => { qty = +(qty + 0.5).toFixed(1); qtyEl.textContent = qty; recompute(); } }, "+"));
+
+    // Editable Points value (per serving) — saved so it matches WW next time.
+    const ptsField = h("input", { class: "pts-edit-input", type: "number", inputmode: "numeric", min: "0", value: String(perServing()) });
+    const ptsStatus = h("div", { class: "pts-edit-status" });
+    function refreshStatus() {
+      ptsField.value = String(perServing());
+      ptsStatus.replaceChildren(
+        custom != null
+          ? h("span", { class: "edited-tag" }, `Your value · calculated ${calculated()}`)
+          : h("span", {}, `Calculated from nutrition${zero ? " · ZeroPoint" : ""}`),
+        custom != null ? h("button", { class: "link-btn", onClick: () => { clearPointsOverride(item); custom = null; refreshStatus(); recompute(); } }, "Reset") : null);
+    }
+    const editRow = h("div", { class: "pts-edit" },
+      h("div", { class: "pts-edit-top" },
+        h("div", { class: "pts-edit-label" }, "Points per serving"),
+        ptsField),
+      ptsStatus);
+    ptsField.addEventListener("change", () => {
+      const v = parseInt(ptsField.value, 10);
+      if (!Number.isFinite(v) || v < 0) { refreshStatus(); return; }
+      if (v === calculated() && !zero) { clearPointsOverride(item); custom = null; }
+      else { setPointsOverride(item, v); custom = v; if (zero) zero = false; }
+      refreshStatus(); recompute();
+    });
 
     const nutr = h("div", { class: "nutr-grid" },
       nutrCell("Calories", n.calories, "cal"),
@@ -175,9 +214,9 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
 
     const zeroToggle = h("label", { class: "toggle-row" },
       h("span", {}, "ZeroPoint food"),
-      toggle(zero, (on) => { zero = on; recompute(); }));
+      toggle(zero, (on) => { zero = on; if (on) custom = null; refreshStatus(); recompute(); }));
 
-    recompute();
+    recompute(); refreshStatus();
     const body2 = h("div", { class: "detail" },
       h("div", { class: "detail-head" },
         h("div", {},
@@ -185,10 +224,11 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
           h("div", { class: "detail-serv" }, [item.brand, item.serving].filter(Boolean).join(" · "))),
         ptsEl),
       h("div", { class: "detail-row" }, h("span", {}, "Servings"), stepper),
+      editRow,
       zeroToggle,
       Object.keys(n).length ? h("div", { class: "detail-sec-label" }, "Per serving") : null,
       Object.keys(n).length ? nutr : null,
-      h("button", { class: "btn-primary big", onClick: () => { addToLog(item, qty, zero ? 0 : undefined); detail.close(); } },
+      h("button", { class: "btn-primary big", onClick: () => { addToLog(item, qty, perServing()); detail.close(); } },
         "Add to " + MEALS.find((m) => m.key === meal).label));
     const detail = sheet(item.name, body2);
   }

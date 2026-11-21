@@ -3,8 +3,21 @@
 // branded/scanned products.
 import { pointsFromNutrition, looksZeroPoint } from "./points.js";
 import { CATEGORIES } from "./foods-db.js";
+import { USDA_API_KEY } from "./config.js";
 
 const OFF = "https://world.openfoodfacts.org";
+const USDA = "https://api.nal.usda.gov/fdc/v1";
+const LS_USDA = "ww_usda_key";
+
+// The USDA key: a per-device override (set in Settings) takes priority,
+// otherwise the one baked into config.js.
+export function getUsdaKey() {
+  try { return (localStorage.getItem(LS_USDA) || "").trim() || USDA_API_KEY; } catch { return USDA_API_KEY; }
+}
+export function setUsdaKey(k) {
+  try { k && k.trim() ? localStorage.setItem(LS_USDA, k.trim()) : localStorage.removeItem(LS_USDA); } catch {}
+}
+export function usingDemoKey() { return getUsdaKey() === "DEMO_KEY"; }
 
 function finalizeItem(it) {
   const zero = it.zero != null ? it.zero : looksZeroPoint(it.name);
@@ -134,6 +147,73 @@ export async function lookupBarcode(code) {
   const data = await res.json();
   if (data.status !== 1 && !data.product) return null;
   return fromOFF(data.product);
+}
+
+// ---- USDA FoodData Central (big database, ~600k foods) ------------------
+function usdaNutrient(food, number) {
+  const arr = food.foodNutrients || [];
+  const n = arr.find((x) => String(x.nutrientNumber ?? x.number ?? x.nutrient?.number) === number);
+  if (!n) return null;
+  const v = n.value ?? n.amount;
+  const x = parseFloat(v);
+  return Number.isFinite(x) ? x : null;
+}
+
+function titleCaseIfYelling(s) {
+  if (s && s === s.toUpperCase()) return s.toLowerCase().replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
+  return s;
+}
+
+function fromUSDA(food) {
+  const desc = (food.description || "").trim();
+  if (!desc) return null;
+  const per100 = {
+    calories: usdaNutrient(food, "208"),
+    fat: usdaNutrient(food, "204"),
+    satFat: usdaNutrient(food, "606"),
+    carbs: usdaNutrient(food, "205"),
+    sugar: usdaNutrient(food, "269"),
+    addedSugar: usdaNutrient(food, "539"),
+    protein: usdaNutrient(food, "203"),
+    fiber: usdaNutrient(food, "291"),
+  };
+  if (per100.calories == null && per100.fat == null && per100.carbs == null && per100.protein == null) return null;
+
+  // Branded foods carry a real serving size; generic foods are per 100 g.
+  let grams = 100;
+  let servingLabel = "100 g";
+  const unit = (food.servingSizeUnit || "").toLowerCase();
+  if (food.servingSize && (unit === "g" || unit === "ml" || unit === "gram" || unit === "grm")) {
+    grams = food.servingSize;
+    servingLabel = food.householdServingFullText || `${+food.servingSize} ${food.servingSizeUnit}`;
+  } else if (food.householdServingFullText) {
+    servingLabel = food.householdServingFullText;
+  }
+  const f = grams / 100;
+  const nutrition = {};
+  for (const k of Object.keys(per100)) if (per100[k] != null) nutrition[k] = +(per100[k] * f).toFixed(1);
+
+  return finalizeItem({
+    id: "usda_" + food.fdcId,
+    name: titleCaseIfYelling(desc),
+    brand: (food.brandName || food.brandOwner || "").trim(),
+    serving: servingLabel,
+    grams: Math.round(grams),
+    nutrition,
+  });
+}
+
+export async function searchUSDA(query, { signal } = {}) {
+  const q = query.trim();
+  if (!q) return [];
+  const key = getUsdaKey();
+  const dataTypes = encodeURIComponent("Foundation,SR Legacy,Survey (FNDDS),Branded");
+  const url = `${USDA}/foods/search?api_key=${encodeURIComponent(key)}` +
+    `&query=${encodeURIComponent(q)}&pageSize=30&dataType=${dataTypes}`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error("usda " + res.status);
+  const data = await res.json();
+  return (data.foods || []).map(fromUSDA).filter(Boolean);
 }
 
 export { finalizeItem };

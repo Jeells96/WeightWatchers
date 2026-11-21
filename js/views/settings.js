@@ -1,6 +1,7 @@
 import { h, icon, toast, fmt } from "../ui.js";
 import { state, mutate, signOut, flush } from "../state.js";
 import { toggle } from "../foodsearch.js";
+import { getUsdaKey, setUsdaKey, usingDemoKey } from "../foods.js";
 
 export function renderSettings() {
   const wrap = h("div", { class: "view" });
@@ -39,6 +40,25 @@ export function renderSettings() {
     numRow(`Starting weight (${unit})`, goal.startWeight, (v) => setGoal("startWeight", v), true),
     numRow(`Goal weight (${unit})`, goal.goalWeight, (v) => setGoal("goalWeight", v), true),
   ]));
+
+  // Food database (USDA key)
+  const keyInput = h("input", { class: "f-input", type: "text", autocapitalize: "none", autocorrect: "off",
+    placeholder: "Paste USDA API key", value: usingDemoKey() ? "" : getUsdaKey() });
+  keyInput.addEventListener("change", () => {
+    setUsdaKey(keyInput.value);
+    toast(keyInput.value.trim() ? "Food database key saved" : "Reverted to demo key");
+    window.__rerender();
+  });
+  const dbStatus = usingDemoKey()
+    ? h("div", { class: "set-hint warn" }, "Using the shared demo key (limited to ~30 searches/hour). Add your own free key for full search.")
+    : h("div", { class: "set-hint ok" }, "✓ Using your key — full food database search is active.");
+  wrap.append(h("div", { class: "card settings-sec" },
+    h("div", { class: "card-title" }, "Food database"),
+    h("div", { class: "set-row col" },
+      h("div", { class: "set-label" }, "USDA FoodData Central API key"), keyInput,
+      dbStatus,
+      h("div", { class: "set-hint" }, "Get a free key in ~1 minute (no credit card) at fdc.nal.usda.gov/api-key-signup, then paste it here. It unlocks ~600,000 foods.")),
+  ));
 
   // Units & profile
   wrap.append(section("Preferences", [
