@@ -117,11 +117,11 @@ export function renderSetup(root, { editing = false } = {}) {
   function next() { if (step < steps.length - 1) { step++; draw(); } else finish(); }
 
   function stepName(body) {
-    const inp = h("input", { class: "f-input big-input", placeholder: "First name", value: data.name, autofocus: true });
+    const inp = h("input", { class: "f-input big-input", placeholder: "First and last name", value: data.name, autocapitalize: "words", autocomplete: "name", autofocus: true });
     inp.addEventListener("input", () => (data.name = inp.value));
     body.append(
       h("h1", { class: "setup-h" }, "What's your name?"),
-      h("p", { class: "setup-p" }, "This is how you'll find your profile. No password needed."),
+      h("p", { class: "setup-p" }, "Enter your first and last name. This is how you'll find and sign in to your profile."),
       inp,
       h("button", { class: "btn-primary big", onClick: () => { if (!data.name.trim()) { toast("Enter your name"); return; } next(); } }, "Continue"));
     setTimeout(() => inp.focus(), 250);
