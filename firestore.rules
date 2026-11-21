@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Existing rules (unchanged) ----
+    match /league/state {
+      allow read, write: if true;
+    }
+    match /soft75/{docId} {
+      allow read, write: if true;
+    }
+    match /soft75_players/{playerId} {
+      allow read, write: if true;
+    }
+
+    // ---- Weight Watchers app ----
+    // One document per profile, keyed by the person's name (slug).
+    // No auth required (private app, name-only profiles).
+    match /ww_profiles/{profileId} {
+      allow read, write: if true;
+    }
+  }
+}
