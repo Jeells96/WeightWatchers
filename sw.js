@@ -1,5 +1,5 @@
 // Simple offline shell cache. Bump VERSION to force an update.
-const VERSION = "ww-v13";
+const VERSION = "ww-v14";
 const SHELL = [
   "./",
   "./index.html",

@@ -4,6 +4,7 @@
 // toward what people actually enter over time.
 import { slug, watchCalibrations, writeCalibration, deleteCalibration } from "./db.js";
 import { state } from "./state.js";
+import { pointsRaw } from "./points.js";
 
 const cal = { entries: {}, unsub: null, onUpdate: null };
 
@@ -35,13 +36,22 @@ export function biasValue() {
   return Math.max(-3, Math.min(3, b));
 }
 
-// Points for one serving of a food, honoring an exact correction if present,
-// otherwise the calculated value plus the shared adjustment.
-export function effectivePoints(item) {
+// Points for an amount of a food. `factor` is the amount relative to the
+// food's default serving; `nutrition` is the nutrition for that amount.
+// An exact correction scales with the amount; otherwise the calculated value
+// gets the shared adjustment (also scaled).
+export function pointsFor(item, factor = 1, nutrition = null) {
   if (item.zero) return 0;
   const e = calibratedEntry(item);
-  if (e) return e.entered;
-  return Math.max(0, Math.round((item.points || 0) + biasValue()));
+  if (e) return Math.max(0, Math.round(e.entered * factor));
+  let raw = nutrition ? pointsRaw(nutrition) : null;
+  if (raw == null) raw = (item.pointsRaw ?? item.points ?? 0) * factor;
+  return Math.max(0, Math.round(raw + biasValue() * factor));
+}
+
+// Points for the food's default serving (lists, badges).
+export function effectivePoints(item) {
+  return pointsFor(item, 1, item.nutrition && Object.keys(item.nutrition).length ? item.nutrition : null);
 }
 
 export function saveCalibration(item, entered, zeroState) {

@@ -25,6 +25,19 @@ function num(v) {
   return Number.isFinite(x) ? x : 0;
 }
 
+// Unrounded Points for a nutrition object (null if not enough info).
+export function pointsRaw(n = {}) {
+  if (!n) return null;
+  const num = (v) => { const x = parseFloat(v); return Number.isFinite(x) ? x : 0; };
+  if (n.fat != null || n.carbs != null) {
+    return num(n.fat) / 3 + num(n.satFat) / 3 + num(n.carbs) / 7 + num(n.sugar) / 29 +
+      num(n.addedSugar) / 8 + num(n.protein) / 19 - num(n.fiber) / 3;
+  }
+  const cal = num(n.calories);
+  if (!cal) return null;
+  return 0.0305 * cal + 0.275 * num(n.satFat) + 0.12 * num(n.sugar) - 0.098 * num(n.protein);
+}
+
 export function pointsFromNutrition(n = {}) {
   const fat = num(n.fat);
   const carbs = num(n.carbs);

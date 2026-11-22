@@ -1,107 +1,164 @@
-import { h, icon, budgetRing, prettyDate, fmt } from "../ui.js";
-import { state, budget, dayLog, todayKey, mutate, latestWeight, pointsUsedOn } from "../state.js";
+// My Day — modeled on the WW layout: header, date strip, Points ring card
+// (Weeklies · Points Left · Used), Scanner / Track a meal, meal rows with
+// protein · fiber · Points, streak, macros & nutrients, weight & activity.
+import { h, icon } from "../ui.js";
+import {
+  state, budget, totalsOn, streak, macroTargets, dayLog, mutate, todayKey, addDays,
+  latestWeight, trackedOn,
+} from "../state.js";
 import { openAddFood } from "../foodsearch.js";
 
 const MEALS = [
-  { key: "breakfast", label: "Breakfast" },
-  { key: "lunch", label: "Lunch" },
-  { key: "dinner", label: "Dinner" },
-  { key: "snack", label: "Snacks" },
+  { key: "breakfast", label: "Breakfast", icon: "coffee" },
+  { key: "lunch", label: "Lunch", icon: "bowl" },
+  { key: "dinner", label: "Dinner", icon: "plate" },
+  { key: "snack", label: "Snacks", icon: "appleIco" },
 ];
+const MODES = { lose: { label: "Lose", icon: "bolt" }, allin: { label: "All-In", icon: "dumbbell" }, maintain: { label: "Maintain", icon: "infinity" } };
+
+let selDate = todayKey();
+export function getSelectedDate() { return selDate; }
+
+export function guessMeal() {
+  const hr = new Date().getHours();
+  return hr < 10 ? "breakfast" : hr < 15 ? "lunch" : hr < 21 ? "dinner" : "snack";
+}
 
 export function renderMyDay() {
-  const b = budget();
+  const today = todayKey();
   const s = state.data.settings;
-  const name = (state.data.name || "").split(" ")[0];
-  const hour = new Date().getHours();
-  const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const b = budget(selDate);
+  const wrap = h("div", { class: "view myday" });
 
-  const wrap = h("div", { class: "view" });
+  // ---- Header ----
+  const reqs = (state.data.requestsIn || []).length;
+  wrap.append(h("div", { class: "topbar" },
+    h("button", { class: "tb-btn", "aria-label": "Menu", onClick: () => window.__nav("settings") }, icon("menu")),
+    h("div", { class: "tb-title" }, "My Day"),
+    h("div", { class: "tb-right" },
+      h("button", { class: "tb-btn", "aria-label": "Friends", onClick: () => window.__nav("friends") }, icon("people")),
+      h("button", { class: "tb-btn", "aria-label": "Notifications", onClick: () => window.__nav("friends") },
+        icon("bell"), reqs ? h("span", { class: "tb-dot" }) : null))));
 
-  // Header
-  wrap.append(h("div", { class: "day-header" },
-    h("div", { class: "greet" }, `${greet}${name ? ", " + name : ""}`),
-    h("div", { class: "day-date" }, prettyDate(todayKey()))));
-
-  // Budget card with ring
-  const ringCard = h("div", { class: "card ring-card" },
-    budgetRing({ remaining: b.dailyRemaining, budget: b.dailyBudget }),
-    h("div", { class: "ring-stats" },
-      stat("Weekly bank", `${b.weeklyRemaining}`, `of ${b.weeklyBudget} left`, b.weeklyRemaining < 0 ? "over" : ""),
-      stat("Activity", `${b.activityToday}`, "earned today"),
-      b.rolled ? stat("Rollovers", `+${b.rolled}`, "into weekly") : stat("Used today", `${b.usedToday}`, "Points")));
-  wrap.append(ringCard);
-
-  // Weekly progress bar
-  const wkFrac = b.weeklyBudget > 0 ? Math.max(0, Math.min(1, b.weeklyRemaining / b.weeklyBudget)) : 0;
-  wrap.append(h("div", { class: "card weekbar-card" },
-    h("div", { class: "weekbar-top" },
-      h("span", {}, "Weekly Points bank"),
-      h("span", { class: "weekbar-num" }, `${b.weeklyRemaining} left`)),
-    h("div", { class: "weekbar" }, h("div", { class: "weekbar-fill" + (b.weeklyRemaining < 0 ? " over" : ""), style: { width: (wkFrac * 100) + "%" } }))));
-
-  // Today's food, by meal
-  const foodCard = h("div", { class: "card meals-card" });
-  foodCard.append(h("div", { class: "card-title-row" }, h("div", { class: "card-title" }, "Today's food")));
-  const dl = dayLog();
-  MEALS.forEach((m) => {
-    const items = dl.meals[m.key] || [];
-    const mealPts = items.reduce((s2, it) => s2 + it.points * (it.qty || 1), 0);
-    const head = h("div", { class: "meal-head", onClick: () => openAddFood(m.key) },
-      h("div", { class: "meal-name" }, m.label),
-      h("div", { class: "meal-right" },
-        h("span", { class: "meal-pts" }, mealPts ? `${mealPts}` : ""),
-        h("button", { class: "add-mini", onClick: (e) => { e.stopPropagation(); openAddFood(m.key); } }, icon("plus"))));
-    foodCard.append(head);
-    items.forEach((it, idx) => {
-      foodCard.append(h("div", { class: "logged-item" },
-        h("div", { class: "li-main" },
-          h("div", { class: "li-name" }, it.name + (it.qty && it.qty !== 1 ? ` ×${it.qty}` : "")),
-          it.serving ? h("div", { class: "li-sub" }, it.serving) : null),
-        h("div", { class: "li-pts" + (it.points === 0 ? " zero" : "") }, String(it.points * (it.qty || 1))),
-        h("button", { class: "li-del", onClick: () => removeItem(m.key, idx) }, icon("trash"))));
-    });
-    if (!items.length) foodCard.append(h("div", { class: "meal-empty", onClick: () => openAddFood(m.key) }, "Add food"));
+  // ---- Date strip ----
+  const strip = h("div", { class: "datestrip" });
+  for (let i = -21; i <= 7; i++) {
+    const key = addDays(today, i);
+    const [y, m, d] = key.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    strip.append(h("button", {
+      class: "ds-day" + (key === selDate ? " sel" : "") + (key > today ? " future" : "") + (key === today ? " today" : ""),
+      onClick: () => { selDate = key; window.__rerender(); },
+    }, h("div", { class: "ds-num" }, String(d)), h("div", { class: "ds-wd" }, dt.toLocaleDateString(undefined, { weekday: "short" }))));
+  }
+  wrap.append(strip);
+  requestAnimationFrame(() => {
+    const sel = strip.querySelector(".sel");
+    if (sel) strip.scrollLeft = sel.offsetLeft - (strip.clientWidth - sel.offsetWidth) / 2;
   });
-  wrap.append(foodCard);
+  if (selDate !== today) {
+    wrap.append(h("button", { class: "back-today", onClick: () => { selDate = today; window.__rerender(); } }, "Back to today"));
+  }
 
-  // Water tracker
-  const water = dl.water || 0;
-  const waterCard = h("div", { class: "card water-card" },
-    h("div", { class: "card-title-row" },
-      h("div", { class: "card-title" }, "Water"),
-      h("div", { class: "water-count" }, `${water} / 8 cups`)),
-    h("div", { class: "water-row" }, ...Array.from({ length: 8 }, (_, i) =>
-      h("button", { class: "cup" + (i < water ? " on" : ""), onClick: () => setWater(i + 1 === water ? i : i + 1) }, icon("water")))));
-  wrap.append(waterCard);
+  // ---- Points ring card ----
+  const mode = MODES[s.mode] || MODES.lose;
+  const curMeal = selDate === today ? guessMeal() : null;
+  const card = h("div", { class: "pts-card" });
+  card.append(h("button", { class: "mode-pill", onClick: () => window.__nav("settings") }, icon(mode.icon), mode.label, icon("chevron")));
+  card.append(h("div", { class: "pts-row" },
+    h("div", { class: "pts-side" },
+      h("div", { class: "pts-side-num" + (b.weeklyRemaining < 0 ? " over" : "") }, String(b.weeklyRemaining)),
+      h("div", { class: "pts-side-lbl" }, "Weeklies")),
+    ring(b.dailyLeft, b.dailyBudget),
+    h("div", { class: "pts-side" },
+      h("div", { class: "pts-side-num" }, String(b.usedToday)),
+      h("div", { class: "pts-side-lbl" }, "Used"))));
+  card.append(h("div", { class: "pts-actions" },
+    h("button", { class: "pa-btn", onClick: () => openAddFood(curMeal || "snack", selDate, { scan: true }) }, icon("scanFood"), h("span", {}, "Scanner")),
+    h("button", { class: "pa-btn", onClick: () => openAddFood(curMeal || "breakfast", selDate) }, icon("plus"), h("span", {}, "Track a meal"))));
+  MEALS.forEach((m) => {
+    const t = totalsOn(selDate, m.key);
+    card.append(h("button", { class: "meal-bar" + (m.key === curMeal ? " cur" : ""), onClick: () => openAddFood(m.key, selDate) },
+      h("div", { class: "mb-ico" }, icon(m.icon)),
+      h("div", { class: "mb-name" }, m.label, t.count ? h("span", { class: "mb-count" }, `${t.count} item${t.count > 1 ? "s" : ""}`) : null),
+      h("div", { class: "mb-stats" },
+        h("div", { class: "mb-macro" }, icon("drumstick"), `${Math.round(t.protein)}g`),
+        h("div", { class: "mb-macro" }, icon("fiber"), `${Math.round(t.fiber)}g`)),
+      h("div", { class: "mb-pts" }, String(Math.round(t.points)))));
+  });
+  wrap.append(card);
 
-  // Weight snapshot
+  // ---- Streak ----
+  const wkStart = addDays(today, -new Date().getDay()); // Sunday
+  const n = streak();
+  wrap.append(h("div", { class: "streak-card" },
+    h("div", { class: "sk-days" }, ...["S", "M", "T", "W", "T", "F", "S"].map((l, i) => {
+      const key = addDays(wkStart, i);
+      return h("div", { class: "sk-day" },
+        h("div", { class: "sk-l" }, l),
+        h("div", { class: "sk-dot" + (trackedOn(key) ? " on" : "") + (key === today ? " today" : "") }, trackedOn(key) ? icon("check") : null));
+    })),
+    h("div", { class: "sk-text" }, n ? `🔥 ${n}-day streak — keep it going!` : "Track a meal to start a streak!")));
+
+  // ---- Daily summary ----
+  const t = totalsOn(selDate);
+  const tg = macroTargets();
+  const water = state.data.log?.[selDate]?.water || 0;
+  wrap.append(h("div", { class: "section-title" }, "Daily Summary"));
+  wrap.append(h("div", { class: "macros-card" },
+    h("div", { class: "mc-head" }, "MACROS AND NUTRIENTS"),
+    h("div", { class: "mc-grid" },
+      tile("drumstick", "Protein", `${Math.round(t.protein)} g`, `${tg.protein[0]}–${tg.protein[1]}g`),
+      tile("bread", "Carbs", `${Math.round(t.carbs)} g`, `${tg.carbs[0]}–${tg.carbs[1]}g`),
+      tile("avocado", "Fats", `${Math.round(t.fat)} g`, `${tg.fat[0]}–${tg.fat[1]}g`),
+      tile("fiber", "Fiber", `${Math.round(t.fiber)} g`, `At least ${tg.fiber}g`),
+      tile("salt", "Sodium", `${Math.round(t.sodium)} mg`, `Under ${tg.sodium}mg`),
+      tile("water", "Water", `${water} cups`, "Tap to add a cup", () => mutate(() => { dayLog(selDate).water = water + 1; })))));
+
+  // ---- Weight / Activity ----
+  const unit = s.units === "metric" ? "kg" : "lbs";
   const lw = latestWeight();
   const goal = state.data.goal || {};
-  if (lw != null) {
-    const unit = s.units === "metric" ? "kg" : "lb";
-    const lost = goal.startWeight != null ? +(goal.startWeight - lw).toFixed(1) : null;
-    wrap.append(h("div", { class: "card weight-snap", onClick: () => window.__nav("weight") },
-      h("div", {},
-        h("div", { class: "card-title" }, "Weight"),
-        h("div", { class: "snap-sub" }, goal.goalWeight != null ? `Goal ${fmt(goal.goalWeight, 1)} ${unit}` : "Set a goal")),
-      h("div", { class: "snap-right" },
-        h("div", { class: "snap-num" }, `${fmt(lw, 1)} ${unit}`),
-        lost != null ? h("div", { class: "snap-delta" + (lost >= 0 ? " down" : " up") }, `${lost >= 0 ? "▼" : "▲"} ${fmt(Math.abs(lost), 1)} ${unit}`) : null),
-      icon("chevron", "chev")));
-  }
+  let hide = false;
+  try { hide = localStorage.getItem("ww_hide_weight") === "1"; } catch {}
+  const pct = goal.startWeight != null && goal.goalWeight != null && lw != null && goal.startWeight !== goal.goalWeight
+    ? Math.max(0, Math.min(1, (goal.startWeight - lw) / (goal.startWeight - goal.goalWeight))) : 0;
+  wrap.append(h("div", { class: "cards-row" },
+    h("div", { class: "mini-card", onClick: () => window.__nav("weight") },
+      h("div", { class: "mini-head" }, "WEIGHT", icon("chevron")),
+      h("div", { class: "mini-big" },
+        hide ? "•••" : (lw != null ? `${+lw.toFixed(1)} ${unit}` : "—"),
+        h("button", { class: "eye-btn", onClick: (e) => { e.stopPropagation(); try { localStorage.setItem("ww_hide_weight", hide ? "0" : "1"); } catch {} window.__rerender(); } }, icon(hide ? "eyeOff" : "eye"))),
+      h("div", { class: "mini-sub" },
+        h("span", {}, `Start: ${goal.startWeight != null ? +goal.startWeight : "—"}`),
+        h("span", {}, `Goal: ${goal.goalWeight != null ? +goal.goalWeight : "—"}`)),
+      h("div", { class: "mini-bar" }, h("div", { style: { width: pct * 100 + "%" } }))),
+    h("div", { class: "mini-card" },
+      h("div", { class: "mini-head" }, "ACTIVITY"),
+      h("div", { class: "mini-big" }, String(b.activityToday)),
+      h("div", { class: "mini-sub" }, h("span", {}, "activity Points today")),
+      h("div", { class: "mini-sub dim" }, h("span", {}, `${b.activityThisWeek} this week`)))));
 
-  wrap.append(h("div", { style: { height: "12px" } }));
+  wrap.append(h("div", { style: { height: "40px" } }));
   return wrap;
 
-  function stat(label, value, sub, cls = "") {
-    return h("div", { class: "rstat" },
-      h("div", { class: "rstat-val " + cls }, value),
-      h("div", { class: "rstat-lbl" }, label),
-      h("div", { class: "rstat-sub" }, sub));
+  function tile(ic, label, value, range, onClick) {
+    return h("button", { class: "mc-tile", onClick },
+      h("div", { class: "mc-top" }, h("div", { class: "mc-ico" }, icon(ic)), icon("chevron")),
+      h("div", { class: "mc-lbl" }, label.toUpperCase()),
+      h("div", { class: "mc-val" }, value),
+      h("div", { class: "mc-range" }, range));
   }
-  function removeItem(mealKey, idx) {
-    mutate((d) => { dayLog().meals[mealKey].splice(idx, 1); });
-  }
-  function setWater(v) { mutate(() => { dayLog().water = v; }); }
+}
+
+function ring(left, total) {
+  const size = 200, stroke = 20, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+  const frac = total > 0 ? Math.max(0, Math.min(1, left / total)) : 0;
+  const el = h("div", { class: "pts-ring" });
+  el.innerHTML = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+    <circle cx="100" cy="100" r="${r}" fill="none" stroke="var(--ring-track)" stroke-width="${stroke}"/>
+    <circle cx="100" cy="100" r="${r}" fill="none" stroke="var(--brand-300)" stroke-width="${stroke}" stroke-linecap="round"
+      stroke-dasharray="${c * frac} ${c}" transform="rotate(-90 100 100)"/></svg>
+    <div class="pr-center"><div class="pr-num">${left}</div><div class="pr-lbl">Points Left</div></div>`;
+  return el;
 }

@@ -13,7 +13,7 @@ const MEALS = [
   { key: "snack", label: "Snacks" },
 ];
 
-export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
+export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey(), opts = {}) {
   let meal = defaultMeal;
   const body = h("div", { class: "addfood" });
 
@@ -299,7 +299,8 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey()) {
   renderTabs();
   doSearch("");
   const s = sheet("Add food", body, { full: true });
-  setTimeout(() => input.focus(), 350);
+  if (opts.scan) setTimeout(() => startScan(), 300);
+  else setTimeout(() => input.focus(), 350);
   return s;
 }
 

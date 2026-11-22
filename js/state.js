@@ -52,7 +52,9 @@ export function defaultProfile(name) {
     pinHash: null,
     settings: {
       dailyBudget: 23,
-      weeklyBudget: 35,
+      weeklyBudget: 28,
+      mode: "lose",           // lose | allin | maintain
+      age: null,
       rollovers: true,        // unused daily points (max 4/day) roll into the weekly bank
       activityAddsToBudget: false,
       units: "imperial",      // imperial => lbs, metric => kg
@@ -81,7 +83,7 @@ export function loadDemo() {
   state.id = "__demo__";
   state.data = {
     name: "Sarah",
-    settings: { dailyBudget: 23, weeklyBudget: 35, rollovers: true, units: "imperial", sex: "female", heightIn: 65, weekResetDay: 1 },
+    settings: { dailyBudget: 32, weeklyBudget: 28, mode: "lose", age: 34, rollovers: true, units: "imperial", sex: "female", heightIn: 65, weekResetDay: 0 },
     goal: { startWeight: 184, goalWeight: 150, startDate: k(-60) },
     weighIns: [
       { date: k(-56), weight: 184 }, { date: k(-49), weight: 182.2 }, { date: k(-42), weight: 180.6 },
@@ -342,52 +344,112 @@ export function activityPointsOn(key) {
   return log.activities.reduce((s, a) => s + (a.points || 0), 0);
 }
 
-export function budget() {
-  const s = state.data.settings;
-  const today = todayKey();
-  const usedToday = pointsUsedOn(today);
-  const dailyBudget = s.dailyBudget || 23;
+function addDays(key, n) {
+  const [y, m, d] = key.split("-").map(Number);
+  return todayKey(new Date(y, m - 1, d + n));
+}
+export { addDays };
 
-  // Weekly bank: start of the week's weekly budget, minus any overage spent
-  // this week beyond each day's daily budget, plus rolled-over unused daily
-  // points (capped at 4/day) from completed days this week.
-  const wkStart = new Date(weekStartKey());
-  let weeklyUsed = 0;
-  let rolled = 0;
-  let activityThisWeek = 0;
+// Daily budget + weekly bank as of `dateKey` (defaults to today).
+// Daily Points are spent first; once they run out, the overage comes out of
+// the weekly bank ("Weeklies"). Unused daily Points (up to 4/day) can roll
+// into the weekly bank from earlier days that week.
+export function budget(dateKey = todayKey()) {
+  const s = state.data.settings;
+  const dailyBudget = s.dailyBudget || 23;
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const wkStart = weekStartKey(new Date(y, m - 1, d));
+  let weeklyUsed = 0, rolled = 0, activityThisWeek = 0;
   for (let i = 0; i < 7; i++) {
-    const d = new Date(wkStart);
-    d.setDate(d.getDate() + i);
-    const key = todayKey(d);
-    if (key > today) break;
+    const key = addDays(wkStart, i);
+    if (key > dateKey) break;
     const used = pointsUsedOn(key);
-    const act = activityPointsOn(key);
-    activityThisWeek += act;
-    const overDaily = used - dailyBudget;
-    if (overDaily > 0) weeklyUsed += overDaily;
-    if (key < today && s.rollovers) {
+    activityThisWeek += activityPointsOn(key);
+    if (used > dailyBudget) weeklyUsed += used - dailyBudget;
+    if (key < dateKey && s.rollovers) {
       const unused = dailyBudget - used;
-      if (unused > 0) rolled += Math.min(4, unused);
+      if (unused > 0 && used > 0) rolled += Math.min(4, unused);
     }
   }
-  const weeklyBudget = (s.weeklyBudget || 0) + rolled;
-  const weeklyRemaining = weeklyBudget - weeklyUsed;
-
-  const dailyRemaining = dailyBudget - usedToday;
-  const activityToday = activityPointsOn(today);
-
+  const weeklyBudget = (s.weeklyBudget ?? 28) + rolled;
+  const usedToday = pointsUsedOn(dateKey);
   return {
     dailyBudget,
     usedToday,
-    dailyRemaining,
+    dailyRemaining: dailyBudget - usedToday,
+    dailyLeft: Math.max(0, dailyBudget - usedToday),
     weeklyBudget,
     weeklyUsed,
-    weeklyRemaining,
+    weeklyRemaining: weeklyBudget - weeklyUsed,
     rolled,
-    activityToday,
+    activityToday: activityPointsOn(dateKey),
     activityThisWeek,
-    activityAddsToBudget: !!s.activityAddsToBudget,
   };
+}
+
+// Sum of nutrients tracked on a day (optionally for one meal).
+export function totalsOn(key, meal = null) {
+  const out = { points: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sodium: 0, count: 0 };
+  const log = state.data?.log?.[key];
+  if (!log || !log.meals) return out;
+  const meals = meal ? [log.meals[meal] || []] : Object.values(log.meals);
+  for (const list of meals) for (const it of list) {
+    const q = it.qty || 1;
+    const n = it.nutrition || {};
+    out.points += (it.points || 0) * q;
+    out.calories += (n.calories || 0) * q;
+    out.protein += (n.protein || 0) * q;
+    out.carbs += (n.carbs || 0) * q;
+    out.fat += (n.fat || 0) * q;
+    out.fiber += (n.fiber || 0) * q;
+    out.sodium += (n.sodium || 0) * q;
+    out.count += 1;
+  }
+  return out;
+}
+
+export function trackedOn(key) { return totalsOn(key).count > 0; }
+
+// Consecutive days with food tracked, ending today (or yesterday if today is empty).
+export function streak() {
+  let key = todayKey();
+  if (!trackedOn(key)) key = addDays(key, -1);
+  let n = 0;
+  while (trackedOn(key) && n < 1000) { n++; key = addDays(key, -1); }
+  return n;
+}
+
+// Rough daily calorie need (Mifflin-St Jeor) — used for macro targets and
+// the suggested Points budget. Falls back to 2000 kcal.
+export function calorieNeed(p = state.data) {
+  const st = p?.settings || {};
+  const lb = latestWeightOf(p);
+  if (!lb || !st.heightIn || !st.age) return 2000;
+  const kg = (st.units === "metric" ? lb : lb * 0.4536);
+  const cm = st.heightIn * 2.54;
+  const base = 10 * kg + 6.25 * cm - 5 * st.age + (st.sex === "male" ? 5 : -161);
+  return Math.round(base * 1.375);
+}
+
+export function macroTargets() {
+  const kcal = calorieNeed();
+  return {
+    protein: [Math.round(kcal * 0.15 / 4), Math.round(kcal * 0.25 / 4)],
+    carbs: [Math.round(kcal * 0.35 / 4), Math.round(kcal * 0.5 / 4)],
+    fat: [Math.round(kcal * 0.15 / 9), Math.round(kcal * 0.27 / 9)],
+    fiber: Math.round(kcal / 1000 * 14),
+    sodium: 2300,
+  };
+}
+
+// Suggested daily Points from body stats + mode (Lose / All-In / Maintain).
+export function suggestBudget({ sex, age, heightIn, weightLb, mode = "lose" }) {
+  if (!weightLb || !heightIn || !age) return { daily: 23, weekly: 28 };
+  const kg = weightLb * 0.4536, cm = heightIn * 2.54;
+  const tdee = (10 * kg + 6.25 * cm - 5 * age + (sex === "male" ? 5 : -161)) * 1.375;
+  const deficit = mode === "maintain" ? 0 : mode === "allin" ? 650 : 500;
+  const daily = Math.max(23, Math.min(60, Math.round((tdee - deficit) / 53)));
+  return { daily, weekly: 28 };
 }
 
 export function latestWeight() {
