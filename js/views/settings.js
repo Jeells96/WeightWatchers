@@ -9,7 +9,7 @@ export function renderSettings() {
   const goal = state.data.goal || (state.data.goal = {});
   const unit = s.units === "metric" ? "kg" : "lb";
 
-  wrap.append(h("div", { class: "day-header" }, h("div", { class: "greet" }, "Settings")));
+  wrap.append(h("div", { class: "topbar" }, h("span"), h("div", { class: "tb-title" }, "Profile"), h("span")));
 
   // Profile
   wrap.append(h("div", { class: "card profile-card" },

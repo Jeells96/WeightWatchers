@@ -708,3 +708,28 @@ body { background: var(--bg); }
 .wt-mid { text-align: center; min-width: 90px; }
 .wt-count { font-size: 56px; font-weight: 800; color: #fff; line-height: 1; }
 .wt-lbl { font-size: 14px; color: #c4c9e4; margin-top: 4px; }
+
+/* ================= Tabs, floating +, Discover ================= */
+.tabbar { height: calc(64px + var(--safe-bottom)); }
+.tab { font-size: 12px; gap: 4px; color: #8c92b0; }
+.tab.on { color: #dfe4ff; }
+.tab.on .ico { color: var(--brand-300); }
+.tab .ico { width: 27px; height: 27px; }
+.fab-float { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(64px + var(--safe-bottom) + 18px); z-index: 30;
+  width: 74px; height: 56px; border-radius: 18px; background: var(--brand-500); color: #fff; display: grid; place-items: center;
+  box-shadow: 0 8px 24px rgba(53,84,255,.5); }
+.fab-float .ico { width: 30px; height: 30px; stroke-width: 2.4; }
+.disc-search { width: 100%; text-align: left; font-size: 17px; }
+.set-hint.big { font-size: 15px; margin-top: -6px; }
+.zp-card { background: #15161c; border-radius: 26px; padding: 6px 16px; }
+.zp-group { display: block; width: 100%; text-align: left; padding: 16px 0; border-bottom: 1px solid #2c2f3d; }
+.zp-group:last-child { border-bottom: none; }
+.zp-name { font-size: 17px; color: #e6e9ff; margin-bottom: 12px; }
+.zp-row { display: flex; gap: 12px; align-items: center; }
+.zp-bubble { position: relative; width: 52px; height: 52px; border-radius: 50%; background: #f4f5f8; display: grid; place-items: center; font-size: 28px; }
+.zp-bubble b { position: absolute; top: -6px; right: -8px; width: 24px; height: 24px; border-radius: 50%; background: #b9cdfb; color: #121318; font-size: 13px; display: grid; place-items: center; }
+.zp-more { width: 52px; height: 52px; border-radius: 10px; border: 1.5px dashed #6c7290; color: #c4c9e4; display: grid; place-items: center; font-size: 15px; }
+.list-sheet { gap: 10px; overflow-y: auto; padding-bottom: 30px; }
+.res-pts.solo { border-radius: 14px; min-height: 40px; }
+.mini-card.wide { gap: 10px; }
+.mini-unit { font-size: 15px; font-weight: 600; color: #c4c9e4; margin-left: 6px; }

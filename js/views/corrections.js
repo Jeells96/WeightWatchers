@@ -4,10 +4,7 @@ import { allCalibrations, updateEntered, removeByKey, biasValue } from "../calib
 export function renderCorrections() {
   const wrap = h("div", { class: "view" });
 
-  wrap.append(h("div", { class: "subpage-head" },
-    h("button", { class: "icon-btn", onClick: () => window.__nav("settings") }, icon("back")),
-    h("div", { class: "subpage-title" }, "Points corrections"),
-    h("span", { style: { width: "38px" } })));
+  wrap.append(h("div", { class: "topbar" }, h("button", { class: "tb-btn", onClick: () => window.__nav("settings") }, icon("back")), h("div", { class: "tb-title" }, "Points corrections"), h("span")));
 
   const entries = allCalibrations();
   const bias = biasValue();

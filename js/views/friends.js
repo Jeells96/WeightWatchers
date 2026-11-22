@@ -9,10 +9,7 @@ export function renderFriends() {
   const wrap = h("div", { class: "view" });
   const d = state.data;
 
-  wrap.append(h("div", { class: "subpage-head" },
-    h("button", { class: "icon-btn", onClick: () => window.__nav("settings") }, icon("back")),
-    h("div", { class: "subpage-title" }, "Friends"),
-    h("span", { style: { width: "38px" } })));
+  wrap.append(h("div", { class: "topbar" }, h("span"), h("div", { class: "tb-title" }, "Community"), h("span")));
 
   // Add friend
   const nameInp = h("input", { class: "f-input", placeholder: "Friend's name", autocapitalize: "words" });

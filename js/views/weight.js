@@ -1,5 +1,6 @@
 import { h, icon, weightChart, sheet, toast, fmt, prettyDate } from "../ui.js";
-import { state, mutate, todayKey, latestWeight } from "../state.js";
+import { state, mutate, todayKey, latestWeight, budget } from "../state.js";
+import { openActivityLog } from "./activity.js";
 
 export function renderWeight() {
   const wrap = h("div", { class: "view" });
@@ -9,7 +10,7 @@ export function renderWeight() {
   const weighIns = [...(state.data.weighIns || [])].sort((a, b) => a.date.localeCompare(b.date));
   const current = latestWeight();
 
-  wrap.append(h("div", { class: "day-header" }, h("div", { class: "greet" }, "Weight")));
+  wrap.append(h("div", { class: "topbar" }, h("span"), h("div", { class: "tb-title" }, "Progress"), h("span")));
 
   // Hero numbers
   const start = goal.startWeight;
@@ -44,6 +45,12 @@ export function renderWeight() {
 
   // Log button
   wrap.append(h("button", { class: "btn-primary big", onClick: () => openWeighIn() }, icon("plus"), "Log weigh-in"));
+  const b = budget();
+  wrap.append(h("div", { class: "mini-card wide" },
+    h("div", { class: "mini-head" }, "ACTIVITY"),
+    h("div", { class: "mini-big" }, `${b.activityToday}`, h("span", { class: "mini-unit" }, "Points today")),
+    h("div", { class: "mini-sub" }, h("span", {}, `${b.activityThisWeek} activity Points this week`)),
+    h("button", { class: "btn-ghost", onClick: () => openActivityLog() }, "Log activity")));
 
   // History
   if (weighIns.length) {

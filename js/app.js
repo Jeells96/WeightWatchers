@@ -2,9 +2,8 @@ import { h, icon } from "./ui.js";
 import { state, getCurrentId, signIn, onChange, loadDemo } from "./state.js";
 import { renderGate } from "./views/onboarding.js";
 import { renderMyDay } from "./views/myday.js";
-import { renderFood } from "./views/food.js";
+import { renderDiscover } from "./views/discover.js";
 import { renderWeight } from "./views/weight.js";
-import { renderActivity } from "./views/activity.js";
 import { renderSettings } from "./views/settings.js";
 import { renderFriends } from "./views/friends.js";
 import { renderCorrections } from "./views/corrections.js";
@@ -16,11 +15,11 @@ const root = document.getElementById("app");
 let current = "myday";
 
 const TABS = [
-  { key: "myday", label: "My Day", icon: "home", render: renderMyDay },
-  { key: "food", label: "Food", icon: "food", render: renderFood },
-  { key: "add", label: "", icon: "plus", center: true },
-  { key: "weight", label: "Weight", icon: "scale", render: renderWeight },
-  { key: "settings", label: "More", icon: "settings", render: renderSettings },
+  { key: "myday", label: "My Day", icon: "calendar", render: renderMyDay },
+  { key: "discover", label: "Discover", icon: "discover", render: renderDiscover },
+  { key: "friends", label: "Community", icon: "people", render: renderFriends },
+  { key: "weight", label: "Progress", icon: "progress", render: renderWeight },
+  { key: "settings", label: "Profile", icon: "profile", render: renderSettings },
 ];
 
 // Global helpers used by views.
@@ -28,49 +27,39 @@ window.__nav = (key) => { current = key; renderApp(); };
 window.__rerender = () => { if (state.data) renderApp(); };
 window.__boot = boot;
 
+let lastView = null;
 function renderApp() {
   if (!state.data) return;
+  const prevScroll = document.getElementById("scroll")?.scrollTop || 0;
+  const same = lastView === current;
   const screen = h("div", { class: "app-shell" });
   const scroll = h("div", { class: "scroll", id: "scroll" });
 
-  if (current === "friends") {
-    scroll.append(renderFriends());
-  } else if (current === "corrections") {
+  if (current === "corrections") {
     scroll.append(renderCorrections());
   } else {
     const tab = TABS.find((t) => t.key === current) || TABS[0];
-    if (tab.render) scroll.append(tab.render());
+    scroll.append(tab.render());
   }
   screen.append(scroll);
 
-  // bottom tab bar
+  // bottom tab bar + floating + (like WW)
   const bar = h("nav", { class: "tabbar" });
   TABS.forEach((t) => {
-    if (t.center) {
-      bar.append(h("button", { class: "tab center", onClick: () => openActionMenu(getSelectedDate()) },
-        h("div", { class: "fab" }, icon("plus"))));
-      return;
-    }
-    const on = t.key === current || (t.key === "settings" && (current === "friends" || current === "corrections"));
-    const badge = t.key === "settings" && state.data && (state.data.requestsIn || []).length
+    const on = t.key === current || (t.key === "settings" && current === "corrections");
+    const badge = t.key === "friends" && (state.data.requestsIn || []).length
       ? h("span", { class: "tab-badge" }, String(state.data.requestsIn.length)) : null;
-    bar.append(h("button", {
-      class: "tab" + (on ? " on" : ""),
-      onClick: () => { current = t.key; renderApp(); },
-    }, h("div", { class: "tab-ico-wrap" }, icon(t.icon), badge), h("span", { class: "tab-lbl" }, t.label)));
+    bar.append(h("button", { class: "tab" + (on ? " on" : ""), onClick: () => { current = t.key; renderApp(); } },
+      h("div", { class: "tab-ico-wrap" }, icon(t.icon), badge), h("span", { class: "tab-lbl" }, t.label)));
   });
   screen.append(bar);
+  if (current === "myday") screen.append(h("button", { class: "fab-float", "aria-label": "Track", onClick: () => openActionMenu(getSelectedDate()) }, icon("plus")));
 
   root.replaceChildren(screen);
+  if (same) scroll.scrollTop = prevScroll;
+  lastView = current;
 }
 
-function currentMealGuess() {
-  const hr = new Date().getHours();
-  if (hr < 10) return "breakfast";
-  if (hr < 15) return "lunch";
-  if (hr < 21) return "dinner";
-  return "snack";
-}
 
 async function boot() {
   if (new URLSearchParams(location.search).get("demo") === "1" && !state.data) {
