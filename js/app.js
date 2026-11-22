@@ -10,6 +10,7 @@ import { renderCorrections } from "./views/corrections.js";
 import { openActionMenu } from "./actions.js";
 import { getSelectedDate } from "./views/myday.js";
 import { initCalibrations } from "./calibrations.js";
+import { initCustomFoods } from "./customfoods.js";
 
 const root = document.getElementById("app");
 let current = "myday";
@@ -65,6 +66,7 @@ async function boot() {
   if (new URLSearchParams(location.search).get("demo") === "1" && !state.data) {
     loadDemo();
     initCalibrations(() => { if (state.data) renderApp(); });
+    initCustomFoods();
     renderApp();
     return;
   }
@@ -75,6 +77,7 @@ async function boot() {
   }
   if (state.data) {
     initCalibrations(() => { if (state.data) renderApp(); });
+    initCustomFoods();
     renderApp();
   } else { renderGate(root); }
 }

@@ -95,4 +95,14 @@ export async function deleteCalibration(key) {
   await updateDoc(calibRef(), { ["entries." + key]: deleteField() });
 }
 
+// ---- Shared custom foods (created from nutrition labels) ----------------
+const CUSTOM_ID = "__custom_foods__";
+function customRef() { return doc(db, PROFILES_COLLECTION, CUSTOM_ID); }
+export function watchCustomFoods(cb) {
+  return onSnapshot(customRef(), (s) => cb(s.exists() ? s.data() : { foods: {} }));
+}
+export async function writeCustomFood(id, food) {
+  await setDoc(customRef(), { foods: { [id]: food } }, { merge: true });
+}
+
 export { serverTimestamp, arrayUnion, arrayRemove };

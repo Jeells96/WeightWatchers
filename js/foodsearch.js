@@ -7,6 +7,8 @@ import { h, icon, sheet, toast, prettyDate } from "./ui.js";
 import { searchLocal, searchOpenFoodFacts, searchUSDA, lookupBarcode, foodCategories, foodsInCategory } from "./foods.js";
 import { state, mutate, dayLog, todayKey } from "./state.js";
 import { pointsFor, calibratedEntry, saveCalibration, removeByKey, calKey } from "./calibrations.js";
+import { pointsRaw } from "./points.js";
+import { searchCustom, saveCustomFood } from "./customfoods.js";
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },
@@ -177,13 +179,15 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey(), opt
 
   async function renderSearch() {
     const my = ++token;
-    const local = searchLocal(query);
+    const local = [...searchCustom(query), ...searchLocal(query)];
     const show = (remote, loading) => {
       const nodes = [h("div", { class: "tr-label" }, "SEARCH RESULTS")];
       local.slice(0, 12).forEach((it) => nodes.push(row(it)));
       if (remote) remote.forEach((it) => nodes.push(row(it)));
       if (loading) nodes.push(h("div", { class: "searching" }, h("span", { class: "mini-spin" }), "Searching more foods…"));
-      if (!loading && !local.length && !(remote && remote.length)) nodes.push(h("div", { class: "empty" }, "No matches. Try a brand name, scan the barcode, or tap + to quick add."));
+      if (!loading && !local.length && !(remote && remote.length)) nodes.push(h("div", { class: "empty" }, "No matches in the food databases."));
+      if (!loading) nodes.push(h("button", { class: "create-row", onClick: () => createFood(query) }, icon("plus"),
+        h("div", {}, h("div", { class: "cr-h" }, "Can't find it? Create it"), h("div", { class: "cr-p" }, "Copy the numbers from the restaurant's nutrition info — saved for everyone"))));
       results.replaceChildren(...nodes);
     };
     show(null, true);
@@ -237,6 +241,37 @@ export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey(), opt
         h("div", { class: "art-card a3" }, h("span", { class: "art-ico" }, icon("drumstick")), h("i"), h("i", { class: "s" }))),
       h("div", { class: "tr-empty-h" }, "Search for a food to get started"),
       h("div", { class: "tr-empty-p" }, "Be specific — like grilled chicken breast, Chobani yogurt, or McDonald's fries."));
+  }
+
+  function createFood(prefill = "") {
+    const f = (ph, mode = "decimal") => h("input", { class: "f-input", type: mode === "text" ? "text" : "number", inputmode: mode, placeholder: ph });
+    const name = f("Food name (e.g. 10 pc Boneless Wings)", "text"); name.value = prefill;
+    const brand = f("Restaurant / brand (e.g. Wingstop)", "text");
+    const serving = f("Serving (e.g. 1 order, 1 sandwich)", "text"); serving.value = "1 serving";
+    const fields = [["calories", "Calories"], ["fat", "Total fat (g)"], ["satFat", "Saturated fat (g)"], ["sodium", "Sodium (mg)"],
+      ["carbs", "Total carbs (g)"], ["fiber", "Fiber (g)"], ["sugar", "Total sugars (g)"], ["addedSugar", "Added sugars (g)"], ["protein", "Protein (g)"]];
+    const inputs = {};
+    const preview = h("div", { class: "cf-preview" });
+    const read = () => { const n = {}; for (const [k] of fields) { const v = parseFloat(inputs[k].value); if (Number.isFinite(v)) n[k] = v; } return n; };
+    const paint = () => { const r = pointsRaw(read()); preview.textContent = r == null ? "Enter the nutrition to see Points" : `${Math.max(0, Math.round(r))} Points per serving`; };
+    const grid = h("div", { class: "cf-grid" }, ...fields.map(([k, label]) => {
+      inputs[k] = f(label); inputs[k].addEventListener("input", paint);
+      return h("label", { class: "cf-field" }, h("span", {}, label), inputs[k]);
+    }));
+    paint();
+    let cs;
+    const save = h("button", { class: "btn-primary big", onClick: () => {
+      const n = read();
+      if (!name.value.trim()) { toast("Enter a name"); return; }
+      if (n.calories == null && n.fat == null && n.carbs == null) { toast("Enter at least calories, fat and carbs"); return; }
+      const item = saveCustomFood({ name: name.value.trim(), brand: brand.value.trim(), serving: serving.value.trim() || "1 serving", nutrition: n });
+      toast("Food saved"); cs.close();
+      openFoodDetail(item, ctx);
+    } }, "Save food");
+    cs = sheet("Create food", h("div", { class: "pad cf" }, name, brand, serving,
+      h("div", { class: "set-hint" }, "Numbers are per serving. Wingstop, Jimmy John's and most chains list these on their website under Nutrition."),
+      grid, preview), { full: true, footer: save });
+    setTimeout(() => (prefill ? brand : name).focus(), 300);
   }
 
   function quickAdd() {

@@ -771,3 +771,11 @@ body { background: var(--bg); }
 .sv-input:focus { outline: none; border-color: var(--brand-300); }
 .sv-unit { display: inline-flex; align-items: center; gap: 4px; font-size: 17px; color: #eef0ff; max-width: 150px; }
 .sv-unit .ico { width: 18px; height: 18px; flex: 0 0 auto; }
+.create-row { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 22px; border: 1.5px dashed #4a5590; text-align: left; color: #eef0ff; margin-top: 4px; }
+.create-row > .ico { width: 26px; height: 26px; color: var(--brand-300); flex: 0 0 auto; }
+.cr-h { font-weight: 700; font-size: 16px; }
+.cr-p { font-size: 13px; color: #c4c9e4; margin-top: 2px; }
+.cf { overflow-y: auto; padding-bottom: 24px; }
+.cf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cf-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #c4c9e4; }
+.cf-preview { text-align: center; font-size: 20px; font-weight: 800; color: var(--brand-300); padding: 6px; }
