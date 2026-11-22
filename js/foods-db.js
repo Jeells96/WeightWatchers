@@ -6,6 +6,8 @@
 // zeroPoint = 1 marks WW ZeroPoint foods (most fruit/veg, eggs, lean poultry,
 // fish/shellfish, beans, lentils, tofu, plain nonfat yogurt, corn, peas).
 
+import { ZERO_POINT_LIST } from "./zeropoint-list.js";
+
 export const CATEGORIES = [
   { name: "Fruit", icon: "🍎", items: [
     ["Apple", "1 medium", 182, 95, 0.3, 0, 25, 19, 0.5, 4.4, 1],
@@ -46,8 +48,8 @@ export const CATEGORIES = [
     ["Corn", "1 cup", 154, 132, 2, 0.3, 29, 5, 5, 3.6, 1],
     ["Green peas", "1 cup", 145, 117, 0.6, 0.1, 21, 8, 8, 7, 1],
     ["Asparagus", "1 cup", 134, 27, 0.2, 0, 5, 2.5, 3, 2.8, 1],
-    ["Sweet potato, baked", "1 medium", 114, 112, 0.1, 0, 26, 5, 2, 3.9, 0],
-    ["Baked potato", "1 medium", 173, 161, 0.2, 0, 37, 2, 4.3, 3.8, 0],
+    ["Sweet potato, baked", "1 medium", 114, 112, 0.1, 0, 26, 5, 2, 3.9, 1],
+    ["Baked potato", "1 medium", 173, 161, 0.2, 0, 37, 2, 4.3, 3.8, 1],
     ["Brussels sprouts", "1 cup", 88, 38, 0.3, 0, 8, 1.9, 3, 3.3, 1],
     ["Butternut squash", "1 cup", 205, 82, 0.2, 0, 22, 4, 1.8, 6.6, 1],
   ]},
@@ -56,14 +58,14 @@ export const CATEGORIES = [
     ["Chicken thigh, roasted", "4 oz", 112, 235, 14, 3.8, 0, 0, 25, 0, 0],
     ["Rotisserie chicken", "4 oz", 112, 220, 12, 3.4, 0, 0, 27, 0, 0],
     ["Turkey breast", "4 oz", 112, 153, 0.8, 0.2, 0, 0, 34, 0, 1],
-    ["Ground turkey 93/7", "4 oz", 112, 176, 9.4, 2.5, 0, 0, 22, 0, 0],
-    ["Ground beef 90/10", "4 oz", 112, 199, 10, 4, 0, 0, 26, 0, 0],
+    ["Ground turkey 93/7", "4 oz", 112, 176, 9.4, 2.5, 0, 0, 22, 0, 1],
+    ["Ground beef 90/10", "4 oz", 112, 199, 10, 4, 0, 0, 26, 0, 1],
     ["Ground beef 80/20", "4 oz", 112, 287, 23, 9, 0, 0, 19, 0, 0],
-    ["Sirloin steak", "4 oz", 112, 206, 9, 3.5, 0, 0, 30, 0, 0],
-    ["Pork chop", "4 oz", 112, 186, 8, 2.8, 0, 0, 27, 0, 0],
-    ["Pork tenderloin", "4 oz", 112, 143, 3.5, 1.2, 0, 0, 26, 0, 0],
+    ["Sirloin steak", "4 oz", 112, 206, 9, 3.5, 0, 0, 30, 0, 1],
+    ["Pork chop", "4 oz", 112, 186, 8, 2.8, 0, 0, 27, 0, 1],
+    ["Pork tenderloin", "4 oz", 112, 143, 3.5, 1.2, 0, 0, 26, 0, 1],
     ["Bacon", "2 slices", 16, 86, 7, 2.3, 0.2, 0, 6, 0, 0],
-    ["Deli turkey", "2 oz", 56, 60, 1, 0.3, 2, 1, 11, 0, 0],
+    ["Deli turkey", "2 oz", 56, 60, 1, 0.3, 2, 1, 11, 0, 1],
     ["Deli ham", "2 oz", 56, 68, 2.5, 0.8, 1.5, 1, 10, 0, 0],
     ["Hot dog", "1", 52, 155, 14, 5, 2, 1, 5, 0, 0],
     ["Meatball", "3 pieces", 85, 195, 14, 5, 5, 1, 12, 0.5, 0],
@@ -115,7 +117,7 @@ export const CATEGORIES = [
     ["Pasta, cooked", "1 cup", 140, 220, 1.3, 0.2, 43, 0.8, 8, 2.5, 0],
     ["Whole wheat pasta", "1 cup", 140, 174, 0.8, 0.1, 37, 1, 7.5, 6, 0],
     ["Quinoa, cooked", "1 cup", 185, 222, 3.6, 0.4, 39, 1.6, 8, 5, 0],
-    ["Oatmeal, cooked", "1 cup", 234, 166, 3.6, 0.6, 28, 1, 6, 4, 0],
+    ["Oatmeal, cooked", "1 cup", 234, 166, 3.6, 0.6, 28, 1, 6, 4, 1],
     ["White bread", "1 slice", 25, 66, 0.8, 0.2, 13, 1.4, 1.9, 0.6, 0],
     ["Whole wheat bread", "1 slice", 28, 80, 1.1, 0.2, 14, 1.6, 4, 2, 0],
     ["Bagel", "1 medium", 105, 277, 1.4, 0.3, 55, 6, 11, 2.4, 0],
@@ -167,7 +169,7 @@ export const CATEGORIES = [
   { name: "Snacks & sweets", icon: "🍪", items: [
     ["Potato chips", "1 oz", 28, 152, 10, 1, 15, 0.2, 2, 1.2, 0],
     ["Tortilla chips", "1 oz", 28, 138, 7, 1, 19, 0.3, 2, 1.5, 0],
-    ["Popcorn, air-popped", "3 cups", 24, 93, 1.1, 0.2, 19, 0.2, 3, 3.6, 0],
+    ["Popcorn, air-popped", "3 cups", 24, 93, 1.1, 0.2, 19, 0.2, 3, 3.6, 1],
     ["Pretzels", "1 oz", 28, 108, 0.8, 0.2, 23, 0.6, 2.6, 0.9, 0],
     ["Chocolate chip cookie", "1", 16, 78, 4, 1.5, 10, 6, 0.9, 0.4, 0],
     ["Dark chocolate", "1 oz", 28, 170, 12, 7, 13, 10, 2, 3, 0],
@@ -214,3 +216,16 @@ export const CATEGORIES = [
     ["Marinara sauce", "1/2 cup", 125, 70, 2, 0.4, 10, 7, 2, 2.5, 0],
   ]},
 ];
+
+// Every food on the household ZeroPoint list, searchable and browsable as its
+// own category (skipping names already in the database above).
+{
+  const have = new Set(CATEGORIES.flatMap((c) => c.items.map((r) => r[0].toLowerCase())));
+  const items = [];
+  for (const g of ZERO_POINT_LIST) for (const [name, portion] of g.items) {
+    if (have.has(name.toLowerCase())) continue;
+    have.add(name.toLowerCase());
+    items.push([name, portion, null, null, null, null, null, null, null, null, 1]);
+  }
+  CATEGORIES.unshift({ name: "ZeroPoint foods", icon: "⭐", items });
+}

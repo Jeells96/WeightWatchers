@@ -64,19 +64,80 @@ export function scaleNutrition(per100g, grams) {
   return out;
 }
 
-// Keywords that mark common ZeroPoint foods (non-starchy veg, most fruit,
-// eggs, plain lean proteins, plain yogurt, beans, etc.).
-const ZERO_HINTS = [
-  "apple", "banana", "orange", "strawberr", "blueberr", "raspberr", "grape",
-  "melon", "watermelon", "peach", "pear", "pineapple", "mango", "kiwi",
-  "broccoli", "spinach", "lettuce", "kale", "carrot", "cucumber", "tomato",
-  "pepper", "zucchini", "cauliflower", "green bean", "asparagus", "celery",
-  "onion", "mushroom", "egg", "chicken breast", "turkey breast", "white fish",
-  "cod", "tilapia", "shrimp", "tuna in water", "plain nonfat yogurt",
-  "plain greek yogurt", "black bean", "chickpea", "lentil", "tofu",
-];
+// ---- ZeroPoint detection ---------------------------------------------------
+// Driven by the household's ZeroPoint list (zeropoint-list.js). A food counts
+// as ZeroPoint when its name contains all the key words of a list entry
+// (e.g. USDA "Beef, flank, steak, separable lean only" matches "Beef, flank
+// steak, lean, trimmed"), unless it's been turned into something that costs
+// Points (fried, breaded, in oil, sweetened, in a sauce, baked into a pie…).
+import { ZERO_POINT_LIST } from "./zeropoint-list.js";
+
+// Descriptors that don't change whether it's ZeroPoint.
+const DROP = new Set(["lean", "trimmed", "plain", "fresh", "skinless", "edible", "portion", "item", "items",
+  "large", "small", "medium", "meat", "the", "on", "of", "or", "and", "all", "types", "eg", "in", "no",
+  "style", "raw", "cooked", "cubed", "quartered", "drained", "packed", "roast", "steak", "chop", "chops"]);
+// Not stripped from "beef, top round steak" etc. would be too strict, so
+// "steak/roast/chop" are dropped and the cut name (round, sirloin, loin…) carries it.
+
+// Backup vegetables (the provided list's vegetable section was cut short).
+const VEG_FALLBACK = ["broccoli", "spinach", "lettuce", "kale", "carrot", "cucumber", "tomato", "bell pepper",
+  "zucchini", "squash", "cauliflower", "green bean", "celery", "onion", "mushroom", "cabbage", "brussels sprout",
+  "eggplant", "beet", "radish", "potato", "sweet potato", "yam", "okra", "salsa", "salad greens", "sprout",
+  "leek", "garlic", "turnip", "parsnip", "pumpkin", "chard", "collard", "bok choy", "snow pea", "jicama",
+  "kohlrabi", "fennel", "rutabaga", "watercress", "endive", "radicchio", "sauerkraut", "pickle", "pepper",
+  "tofu", "tempeh", "edamame", "lentil", "chickpea"];
+
+// Things that turn a ZeroPoint food into one that costs Points. Ignored when
+// the list entry itself contains the word (e.g. "Fruit cocktail", "Fruit salad",
+// "Split peas", "Turkey, canned in water").
+const EXCLUDE = ["fried", "breaded", "battered", "nugget", "chip", "fries", "crisp", "crispy", "juice", "pie",
+  "cake", "cookie", "candy", "sweetened", "syrup", "butter", "buttered", "cream", "creamed", "bread", "muffin",
+  "bar", "dried", "jam", "jelly", "dressing", "sauce", "gravy", "oil", "chocolate", "caramel", "kettle",
+  "glazed", "sandwich", "burrito", "pizza", "soup", "smoothie", "mashed", "gratin", "scalloped", "hash",
+  "tot", "fudge", "flavored", "vanilla", "honey", "maple", "granola", "cereal", "pancake", "waffle", "noodle",
+  "pasta", "pudding", "flake", "tortilla", "starch", "dog", "roll", "ring", "sausage", "bacon", "jerky",
+  "salami", "nectar", "drink", "cocktail", "salad", "teriyaki", "bbq", "barbecue", "stuffed", "casserole",
+  "dip", "spread", "cobbler", "crumble", "tart", "alfredo", "parmesan", "cheese", "split", "latte", "spice",
+  "sesame", "batter", "wrap", "taco", "nacho", "quesadilla", "loaf", "patty", "burger", "pot pie", "bowl"];
+const EXCLUDE_PHRASES = ["with skin", "skin on", "orange chicken", "lemon chicken", "general tso", "sweet and sour"];
+
+function stem(w) {
+  if (w.length > 4 && w.endsWith("ies")) return w.slice(0, -3) + "y";
+  if (w.length > 4 && /(ch|sh|x|ss)es$/.test(w)) return w.slice(0, -2);
+  if (w.length > 4 && w.endsWith("oes")) return w.slice(0, -2);
+  if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us")) return w.slice(0, -1);
+  return w;
+}
+function tokens(text) {
+  return String(text).toLowerCase()
+    .replace(/\(.*?\)/g, " ")
+    .replace(/e\.g\..*$/, " ")
+    .replace(/no oil/g, " ")
+    .replace(/(\d{2})\s*\/\s*\d{1,2}/g, "$1%")       // "90/10" -> "90%"
+    .replace(/fat[- ]free/g, "fatfree")
+    .split(/[^a-z0-9%]+/).filter(Boolean).map(stem);
+}
+
+const RULES = [];
+for (const g of ZERO_POINT_LIST) for (const [name] of g.items) {
+  const req = tokens(name).filter((w) => !DROP.has(w));
+  if (req.length) RULES.push({ req, all: new Set(tokens(name)) });
+}
+for (const v of VEG_FALLBACK) RULES.push({ req: tokens(v), all: new Set(tokens(v)) });
 
 export function looksZeroPoint(name = "") {
-  const t = name.toLowerCase();
-  return ZERO_HINTS.some((h) => t.includes(h));
+  const lower = String(name).toLowerCase();
+  // Yogurt / cottage cheese: only plain & nonfat are ZeroPoint.
+  if (lower.includes("yogurt")) return lower.includes("plain") && /(nonfat|non-fat|fat free|fat-free|0%)/.test(lower);
+  if (lower.includes("cottage cheese")) return /(nonfat|non-fat|fat free|fat-free)/.test(lower) && !/(fruit|pineapple|peach|berry)/.test(lower);
+  const words = tokens(lower);
+  const set = new Set(words);
+  const phraseHit = EXCLUDE_PHRASES.some((p) => lower.includes(p));
+  for (const r of RULES) {
+    if (!r.req.every((w) => set.has(w))) continue;
+    if (phraseHit && !EXCLUDE_PHRASES.some((p) => [...r.all].join(" ").includes(p))) continue;
+    const blocked = EXCLUDE.some((x) => { const sx = stem(x); return set.has(sx) && !r.all.has(sx); });
+    if (!blocked) return true;
+  }
+  return false;
 }
