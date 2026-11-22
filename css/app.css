@@ -733,3 +733,35 @@ body { background: var(--bg); }
 .res-pts.solo { border-radius: 14px; min-height: 40px; }
 .mini-card.wide { gap: 10px; }
 .mini-unit { font-size: 15px; font-weight: 600; color: #c4c9e4; margin-left: 6px; }
+
+/* ================= Onboarding (WW layout) ================= */
+.setup { background: var(--bg); }
+.setup-h { color: #d6dcff; font-size: 32px; line-height: 1.15; }
+.setup-p { color: #dfe4ff; }
+.setup-top .icon-btn { background: transparent; color: #dfe4ff; }
+.setup-dots .dot { background: #2f3760; }
+.setup-dots .dot.done { background: #5a6fc4; }
+.setup-dots .dot.on { background: var(--brand-300); }
+.ob-kicker { text-align: center; font-size: 17px; color: #d6dcff; font-weight: 600; margin-bottom: 4px; }
+.ob-accent { color: var(--brand-300); text-transform: uppercase; }
+.mode-card { position: relative; text-align: left; background: #1d2238; border: 1.5px solid #343a58; border-radius: 26px; padding: 20px 20px 18px; display: flex; flex-direction: column; gap: 10px; color: #dfe4ff; }
+.mode-card.on { border-color: var(--brand-300); box-shadow: 0 0 0 2px rgba(142,169,255,.35); }
+.mode-tag { position: absolute; top: -14px; right: 18px; padding: 6px 14px; border-radius: 10px; background: var(--brand-500); color: #fff; font-size: 13px; font-weight: 800; letter-spacing: .5px; }
+.mode-tag.soft { position: static; align-self: flex-start; background: #2a3150; color: #c8d0ff; font-weight: 600; letter-spacing: 0; order: -1; display: none; }
+.mode-top { display: flex; justify-content: space-between; align-items: center; color: #c8d4ff; }
+.mode-title { font-family: "AvenirNextCondensed-Heavy", "Avenir Next Condensed", "Arial Narrow", sans-serif; font-weight: 900; font-stretch: condensed; font-size: 46px; letter-spacing: -1px; line-height: 1; color: #d6dcff; }
+.mode-top .ico { width: 40px; height: 40px; color: var(--brand-300); }
+.mode-text { font-size: 15px; line-height: 1.45; }
+.mode-b { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; }
+.mode-b .ico { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 2px; }
+.ob-ring { padding: 22px 16px; }
+.ob-step { display: flex; justify-content: space-between; align-items: center; background: #1d2238; border-radius: 18px; padding: 10px 12px 10px 18px; font-weight: 600; color: #dfe4ff; }
+.ob-step-ctl { display: flex; align-items: center; gap: 14px; }
+.ob-step-ctl button { width: 40px; height: 40px; border-radius: 50%; background: #26336a; color: #fff; font-size: 22px; font-weight: 700; }
+.ob-step-val { min-width: 32px; text-align: center; font-size: 20px; font-weight: 800; color: #fff; }
+.ob-explain h3 { margin: 12px 0 4px; font-size: 20px; color: #d6dcff; }
+.ob-explain p { margin: 0; font-size: 16px; line-height: 1.45; color: #dfe4ff; }
+.ob-tip { background: #1b1d27; border-radius: 22px; padding: 18px; }
+.ob-tip-tag { display: inline-block; padding: 6px 12px; border-radius: 8px; background: var(--brand-300); color: #121318; font-size: 13px; font-weight: 800; letter-spacing: .4px; }
+.ob-tip p { margin: 12px 0 0; font-size: 16px; line-height: 1.45; color: #dfe4ff; }
+.setup-body .zp-card { margin: 4px -6px; }

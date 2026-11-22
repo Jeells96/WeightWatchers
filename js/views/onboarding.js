@@ -1,6 +1,7 @@
 import { h, icon, toast, fmt, sheet } from "../ui.js";
 import { slug, loadProfile, hashPin } from "../db.js";
-import { signIn, createProfile, mutate, state, flush, todayKey, checkPin } from "../state.js";
+import { signIn, createProfile, mutate, state, flush, todayKey, checkPin, suggestBudget } from "../state.js";
+import { ZERO_POINT_LIST } from "../zeropoint-list.js";
 
 const logo = () => h("div", { class: "wordmark big", html:
   `<span class="ww">WW</span><span class="ww-name">Weight&nbsp;Watchers</span>` });
@@ -93,12 +94,12 @@ export function promptPin(profile, onOk) {
 export function renderSetup(root, { editing = false } = {}) {
   const data = {
     name: "", pin: "", pin2: "", sex: "", units: "imperial",
-    heightFt: "", heightIn: "", heightCm: "",
+    heightFt: "", heightIn: "", heightCm: "", age: "", mode: "lose", budgetSet: false,
     startWeight: "", goalWeight: "",
     dailyBudget: 23, weeklyBudget: 35,
   };
   let step = 0;
-  const steps = ["name", "pin", "body", "goal", "budget"];
+  const steps = ["name", "pin", "body", "goal", "mode", "budget", "zeropoint"];
 
   const screen = h("div", { class: "setup" });
   root.replaceChildren(screen);
@@ -117,6 +118,8 @@ export function renderSetup(root, { editing = false } = {}) {
     else if (steps[step] === "body") stepBody(body);
     else if (steps[step] === "goal") stepGoal(body);
     else if (steps[step] === "budget") stepBudget(body);
+    else if (steps[step] === "mode") stepMode(body);
+    else if (steps[step] === "zeropoint") stepZero(body);
     screen.append(body);
   }
 
@@ -178,6 +181,7 @@ export function renderSetup(root, { editing = false } = {}) {
       h("h1", { class: "setup-h" }, "A little about you"),
       h("label", { class: "f-label" }, "Units"), unitSeg,
       h("label", { class: "f-label" }, "Sex"), sexSeg,
+      h("label", { class: "f-label" }, "Age"), ageInput(),
       h("label", { class: "f-label" }, "Height"), heightField,
       h("button", { class: "btn-primary big", onClick: next }, "Continue"));
   }
@@ -196,17 +200,88 @@ export function renderSetup(root, { editing = false } = {}) {
       h("button", { class: "btn-primary big", onClick: next }, "Continue"));
   }
 
-  function stepBudget(body) {
-    const daily = h("input", { class: "f-input big-input", type: "number", inputmode: "numeric", value: data.dailyBudget });
-    const weekly = h("input", { class: "f-input big-input", type: "number", inputmode: "numeric", value: data.weeklyBudget });
-    daily.addEventListener("input", () => (data.dailyBudget = parseInt(daily.value, 10) || 0));
-    weekly.addEventListener("input", () => (data.weeklyBudget = parseInt(weekly.value, 10) || 0));
+  function ageInput() {
+    const a = h("input", { class: "f-input", type: "number", inputmode: "numeric", placeholder: "Age", value: data.age });
+    a.addEventListener("input", () => (data.age = a.value));
+    return a;
+  }
+  function heightInches() {
+    if (data.units === "imperial") { const t = (parseInt(data.heightFt, 10) || 0) * 12 + (parseInt(data.heightIn, 10) || 0); return t || null; }
+    const cm = parseFloat(data.heightCm); return Number.isFinite(cm) ? +(cm / 2.54).toFixed(1) : null;
+  }
+
+  function stepMode(body) {
+    const MODES = [
+      { key: "lose", title: "LOSE", ico: "bolt", tag: "RECOMMENDED", text: "Steady, flexible weight loss. A great fit if you're just starting or want room for real life.",
+        bullets: ["Daily Points budget fitted to your body and goal", "Weekly Points so you never miss out"] },
+      { key: "allin", title: "ALL-IN", ico: "dumbbell", tag: "New", text: "A focused push for faster results when you're ready for a challenge.",
+        bullets: ["Protein, fiber, water and activity targets", "A tighter daily Points budget"] },
+      { key: "maintain", title: "MAINTAIN", ico: "infinity", text: "For holding steady at a weight you're happy with, or taking a break from losing.",
+        bullets: ["A larger, adjustable daily Points budget"] },
+    ];
     body.append(
-      h("h1", { class: "setup-h" }, "Your Points budget"),
-      h("p", { class: "setup-p" }, "Enter the daily and weekly Points from your plan. Not sure yet? The defaults are a common starting point — adjust later."),
-      h("label", { class: "f-label" }, "Daily Points budget"), daily,
-      h("label", { class: "f-label" }, "Weekly Points bank"), weekly,
+      h("div", { class: "ob-kicker" }, "Personalize your program"),
+      h("h1", { class: "setup-h" }, "Choose your ", h("span", { class: "ob-accent" }, "mode")),
+      h("p", { class: "setup-p" }, "Pick the pace that fits your life. You can change it any time."),
+      ...MODES.map((m) => h("button", { class: "mode-card" + (data.mode === m.key ? " on" : ""), onClick: () => { data.mode = m.key; data.budgetSet = false; draw(); } },
+        m.tag ? h("span", { class: "mode-tag" + (m.tag === "New" ? " soft" : "") }, m.tag) : null,
+        h("div", { class: "mode-top" }, h("span", { class: "mode-title" }, m.title), icon(m.ico)),
+        h("div", { class: "mode-text" }, m.text),
+        ...m.bullets.map((x) => h("div", { class: "mode-b" }, icon("check"), x)))),
+      h("button", { class: "btn-primary big", onClick: next }, "Next"));
+  }
+
+  function stepBudget(body) {
+    if (!data.budgetSet) {
+      const sug = suggestBudget({ sex: data.sex, age: parseInt(data.age, 10), heightIn: heightInches(),
+        weightLb: data.units === "metric" ? parseFloat(data.startWeight) / 0.4536 : parseFloat(data.startWeight), mode: data.mode });
+      data.dailyBudget = sug.daily; data.weeklyBudget = sug.weekly; data.budgetSet = true;
+    }
+    const ringBox = h("div");
+    const paint = () => ringBox.replaceChildren(h("div", { class: "pts-card ob-ring" }, h("div", { class: "pts-row" },
+      h("div", { class: "pts-side" }, h("div", { class: "pts-side-num" }, String(data.weeklyBudget)), h("div", { class: "pts-side-lbl" }, "Weeklies")),
+      obRing(data.dailyBudget),
+      h("div", { class: "pts-side" }, h("div", { class: "pts-side-num" }, "0"), h("div", { class: "pts-side-lbl" }, "Used")))));
+    const stepper = (label, key) => {
+      const val = h("span", { class: "ob-step-val" }, String(data[key]));
+      const set = (d) => { data[key] = Math.max(0, data[key] + d); val.textContent = String(data[key]); paint(); };
+      return h("div", { class: "ob-step" }, h("span", {}, label),
+        h("div", { class: "ob-step-ctl" }, h("button", { onClick: () => set(-1) }, "–"), val, h("button", { onClick: () => set(1) }, "+")));
+    };
+    paint();
+    body.append(
+      h("h1", { class: "setup-h" }, "Your Points Budget"),
+      h("p", { class: "setup-p" }, "Estimated from your body, goal and mode. Stay within it to keep losing at a steady pace. If your plan gives you different numbers, adjust them below."),
+      ringBox,
+      stepper("Daily Points", "dailyBudget"),
+      stepper("Weeklies", "weeklyBudget"),
+      h("div", { class: "ob-explain" },
+        h("h3", {}, "Daily Points"), h("p", {}, "Your everyday budget — spend it on any foods you like."),
+        h("h3", {}, "Weeklies"), h("p", {}, "A weekly cushion that kicks in once your daily Points run out.")),
+      h("div", { class: "ob-tip" }, h("span", { class: "ob-tip-tag" }, "PRO TIP"),
+        h("p", {}, "Filling up on ZeroPoint foods — fruit, veggies, eggs, beans and lean protein — makes it much easier to stay on budget.")),
+      h("button", { class: "btn-primary big", onClick: next }, "Next"));
+  }
+
+  function stepZero(body) {
+    const EM = { "Vegetables (incl. potatoes)": ["🥔", "🥒", "🥦", "🥕"], "Tofu & tempeh": ["🧈", "🫘", "🥢", "🍱"], "Chicken & turkey": ["🍗", "🦃", "🥪", "🍖"],
+      "Oats": ["🥣", "🌾", "🥄", "🫙"], "Beans, peas & lentils": ["🫘", "🫛", "🥗", "🌯"], "Lean meats": ["🥩", "🍖", "🐄", "🐑"], "Fruit": ["🍈", "🍎", "🍇", "🍌"],
+      "Fish & shellfish": ["🐟", "🦐", "🍣", "🦀"], "Eggs": ["🍳", "🥚", "🥘", "🧆"], "Corn & popcorn": ["🌽", "🍿", "🌾", "🫓"], "Yogurt & cottage cheese": ["🥛", "🍶", "🥣", "🧀"] };
+    body.append(
+      h("h1", { class: "setup-h" }, "The power of ZeroPoint foods"),
+      h("p", { class: "setup-p" }, "These filling, nutrient-packed foods don't count against your budget. Use them as meal bases, snacks and add-ins."),
+      h("div", { class: "zp-card" }, ...ZERO_POINT_LIST.map((g) => h("div", { class: "zp-group" },
+        h("div", { class: "zp-name" }, g.group),
+        h("div", { class: "zp-row" }, ...(EM[g.group] || ["⭐", "⭐", "⭐", "⭐"]).map((e) => h("div", { class: "zp-bubble" }, h("span", {}, e), h("b", {}, "0"))),
+          h("div", { class: "zp-more" }, String(g.items.length)))))),
+      h("p", { class: "setup-p" }, "They're not unlimited — start with your usual portions and have more if you're still hungry."),
       h("button", { class: "btn-primary big", onClick: finish }, "Start tracking"));
+  }
+
+  function obRing(n) {
+    const el = h("div", { class: "pts-ring" });
+    el.innerHTML = `<svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="90" fill="none" stroke="var(--brand-300)" stroke-width="20"/></svg><div class="pr-center"><div class="pr-num">${n}</div><div class="pr-lbl">Left</div></div>`;
+    return el;
   }
 
   async function finish() {
@@ -234,7 +309,9 @@ export function renderSetup(root, { editing = false } = {}) {
       d.settings.sex = data.sex;
       d.settings.heightIn = heightIn;
       d.settings.dailyBudget = data.dailyBudget || 23;
-      d.settings.weeklyBudget = data.weeklyBudget || 35;
+      d.settings.weeklyBudget = data.weeklyBudget ?? 28;
+      d.settings.mode = data.mode;
+      d.settings.age = parseInt(data.age, 10) || null;
       const sw = parseFloat(data.startWeight), gw = parseFloat(data.goalWeight);
       d.goal = { startDate: todayKey(), startWeight: Number.isFinite(sw) ? sw : null, goalWeight: Number.isFinite(gw) ? gw : null };
       if (Number.isFinite(sw)) d.weighIns = [{ date: todayKey(), weight: +sw.toFixed(1) }];
