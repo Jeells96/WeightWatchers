@@ -164,56 +164,92 @@ function titleCaseIfYelling(s) {
   return s;
 }
 
+const BRAND_FIX = { mcdonalds: "McDonald's", "mcdonald's": "McDonald's", wendys: "Wendy's", "wendy's": "Wendy's",
+  arbys: "Arby's", "arby's": "Arby's", dennys: "Denny's", "dominos": "Domino's", "domino's": "Domino's",
+  kfc: "KFC", "chick-fil-a": "Chick-fil-A" };
+function fixBrand(b) {
+  const k = b.toLowerCase().trim();
+  return BRAND_FIX[k] || k.replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
+}
+// "Cheeseburger (McDonalds)" / "McDONALD'S, Hamburger" / "Yogurt, Greek, CHOBANI" -> brand first
+function niceName(desc) {
+  const paren = desc.match(/^(.+?)\s*\(([A-Z][^)]{1,30})\)$/);
+  if (paren && !/[0-9]/.test(paren[2]) && !/^(includes|with|made|from|NFS|NS)/i.test(paren[2])) {
+    const brand = fixBrand(paren[2]); return { name: `${brand} ${paren[1]}`, brand };
+  }
+  const parts = desc.split(",");
+  const shouty = (t) => { const l = t.replace(/[^A-Za-z]/g, ""); return l.length >= 3 && t.replace(/[^A-Z]/g, "").length / l.length > 0.75; };
+  if (parts.length > 1 && shouty(parts[0])) {
+    const brand = fixBrand(parts[0]); return { name: `${brand} ${parts.slice(1).join(",").trim()}`, brand };
+  }
+  if (parts.length > 1 && shouty(parts[parts.length - 1])) {
+    const brand = fixBrand(parts[parts.length - 1]); return { name: `${brand} ${parts.slice(0, -1).join(",").trim()}`, brand };
+  }
+  return { name: titleCaseIfYelling(desc), brand: "" };
+}
+
 function fromUSDA(food) {
   const desc = (food.description || "").trim();
   if (!desc) return null;
   const per100 = {
-    calories: usdaNutrient(food, "208"),
-    fat: usdaNutrient(food, "204"),
-    satFat: usdaNutrient(food, "606"),
-    carbs: usdaNutrient(food, "205"),
-    sugar: usdaNutrient(food, "269"),
-    addedSugar: usdaNutrient(food, "539"),
-    protein: usdaNutrient(food, "203"),
-    fiber: usdaNutrient(food, "291"),
+    calories: usdaNutrient(food, "208"), fat: usdaNutrient(food, "204"), satFat: usdaNutrient(food, "606"),
+    carbs: usdaNutrient(food, "205"), sugar: usdaNutrient(food, "269"), addedSugar: usdaNutrient(food, "539"),
+    protein: usdaNutrient(food, "203"), fiber: usdaNutrient(food, "291"), sodium: usdaNutrient(food, "307"),
   };
   if (per100.calories == null && per100.fat == null && per100.carbs == null && per100.protein == null) return null;
 
-  // Branded foods carry a real serving size; generic foods are per 100 g.
-  let grams = 100;
-  let servingLabel = "100 g";
+  // Prefer a real portion ("1 cheeseburger" = 110 g, "1 cup, cooked" = 174 g),
+  // then a branded label serving, and only fall back to 100 g.
+  let grams = 100, servingLabel = "100 g", real = false;
+  const measures = (food.foodMeasures || []).filter((m) => m.gramWeight > 0 && m.disseminationText);
+  const m = measures.find((x) => !/quantity not specified/i.test(x.disseminationText)) || measures[0];
   const unit = (food.servingSizeUnit || "").toLowerCase();
-  if (food.servingSize && (unit === "g" || unit === "ml" || unit === "gram" || unit === "grm")) {
-    grams = food.servingSize;
-    servingLabel = food.householdServingFullText || `${+food.servingSize} ${food.servingSizeUnit}`;
-  } else if (food.householdServingFullText) {
-    servingLabel = food.householdServingFullText;
+  const hh = (food.householdServingFullText || "").trim();
+  if (m) {
+    grams = m.gramWeight; real = true;
+    servingLabel = /quantity not specified/i.test(m.disseminationText) ? "1 serving"
+      : m.disseminationText.replace(/\b(mcdonald'?s|burger king|wendy'?s|taco bell|subway|kfc|arby'?s)\s+/i, "");
+  } else if (food.servingSize && ["g", "ml", "gram", "grm", "mlt"].includes(unit)) {
+    grams = food.servingSize; real = true;
+    servingLabel = hh && !/^none$/i.test(hh) ? hh.toLowerCase() : `${+food.servingSize} ${unit === "mlt" ? "ml" : unit}`;
   }
   const f = grams / 100;
   const nutrition = {};
   for (const k of Object.keys(per100)) if (per100[k] != null) nutrition[k] = +(per100[k] * f).toFixed(1);
 
-  return finalizeItem({
-    id: "usda_" + food.fdcId,
-    name: titleCaseIfYelling(desc),
-    brand: (food.brandName || food.brandOwner || "").trim(),
-    serving: servingLabel,
-    grams: Math.round(grams),
-    nutrition,
+  const { name, brand } = niceName(desc);
+  const item = finalizeItem({
+    id: "usda_" + food.fdcId, name,
+    brand: brand || (food.brandName || food.brandOwner || "").trim(),
+    serving: servingLabel, grams: Math.round(grams), nutrition,
   });
+  item._real = real;
+  return item;
 }
 
 export async function searchUSDA(query, { signal } = {}) {
   const q = query.trim();
   if (!q) return [];
-  const key = getUsdaKey();
-  const dataTypes = encodeURIComponent("Foundation,SR Legacy,Survey (FNDDS),Branded");
-  const url = `${USDA}/foods/search?api_key=${encodeURIComponent(key)}` +
-    `&query=${encodeURIComponent(q)}&pageSize=30&dataType=${dataTypes}`;
-  const res = await fetch(url, { signal });
+  const dataTypes = encodeURIComponent("Survey (FNDDS),Foundation,SR Legacy,Branded");
+  const url = `${USDA}/foods/search?api_key=${encodeURIComponent(getUsdaKey())}` +
+    `&query=${encodeURIComponent(q)}&pageSize=40&dataType=${dataTypes}`;
+  // USDA's gateway intermittently returns 400/429/5xx — retry before giving up.
+  let res;
+  for (let i = 0; i < 3; i++) {
+    res = await fetch(url, { signal });
+    if (res.ok) break;
+    await new Promise((r) => setTimeout(r, 350 * (i + 1)));
+  }
   if (!res.ok) throw new Error("usda " + res.status);
   const data = await res.json();
-  return (data.foods || []).map(fromUSDA).filter(Boolean);
+  const words = q.toLowerCase().split(/\s+/).filter((w) => w.length > 1);
+  const seen = new Set();
+  // Exact brand/word matches first, then foods with real servings; no duplicates.
+  return (data.foods || []).map(fromUSDA).filter(Boolean)
+    .map((it, i) => ({ it, i, all: words.every((w) => (it.name + " " + it.brand).toLowerCase().includes(w)) ? 1 : 0 }))
+    .sort((a, b) => (b.all - a.all) || (b.it._real - a.it._real) || a.i - b.i)
+    .map((x) => x.it)
+    .filter((it) => { const k = it.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
 export { finalizeItem };
