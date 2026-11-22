@@ -79,14 +79,6 @@ const DROP = new Set(["lean", "trimmed", "plain", "fresh", "skinless", "edible",
 // Not stripped from "beef, top round steak" etc. would be too strict, so
 // "steak/roast/chop" are dropped and the cut name (round, sirloin, loin…) carries it.
 
-// Backup vegetables (the provided list's vegetable section was cut short).
-const VEG_FALLBACK = ["broccoli", "spinach", "lettuce", "kale", "carrot", "cucumber", "tomato", "bell pepper",
-  "zucchini", "squash", "cauliflower", "green bean", "celery", "onion", "mushroom", "cabbage", "brussels sprout",
-  "eggplant", "beet", "radish", "potato", "sweet potato", "yam", "okra", "salsa", "salad greens", "sprout",
-  "leek", "garlic", "turnip", "parsnip", "pumpkin", "chard", "collard", "bok choy", "snow pea", "jicama",
-  "kohlrabi", "fennel", "rutabaga", "watercress", "endive", "radicchio", "sauerkraut", "pickle", "pepper",
-  "tofu", "tempeh", "edamame", "lentil", "chickpea"];
-
 // Things that turn a ZeroPoint food into one that costs Points. Ignored when
 // the list entry itself contains the word (e.g. "Fruit cocktail", "Fruit salad",
 // "Split peas", "Turkey, canned in water").
@@ -119,22 +111,30 @@ function tokens(text) {
 }
 
 const RULES = [];
-for (const g of ZERO_POINT_LIST) for (const [name] of g.items) {
-  const req = tokens(name).filter((w) => !DROP.has(w));
-  if (req.length) RULES.push({ req, all: new Set(tokens(name)) });
+for (const g of ZERO_POINT_LIST) for (const [full] of g.items) {
+  for (const name of full.split("/")) {
+    // "baked or broiled" -> either word is enough
+    const anyOf = [];
+    const cleaned = name.replace(/\(.*?\)/g, " ").replace(/([a-z]+) or ([a-z]+)/gi, (m, a, b) => {
+      anyOf.push([stem(a.toLowerCase()), stem(b.toLowerCase())]); return " ";
+    });
+    const req = tokens(cleaned).filter((w) => !DROP.has(w));
+    if (req.length) RULES.push({ req, anyOf, all: new Set(tokens(full)) });
+  }
 }
-for (const v of VEG_FALLBACK) RULES.push({ req: tokens(v), all: new Set(tokens(v)) });
 
 export function looksZeroPoint(name = "") {
   const lower = String(name).toLowerCase();
   // Yogurt / cottage cheese: only plain & nonfat are ZeroPoint.
-  if (lower.includes("yogurt")) return lower.includes("plain") && /(nonfat|non-fat|fat free|fat-free|0%)/.test(lower);
+  if (lower.includes("yogurt")) return lower.includes("plain") && !/(vanilla|honey|fruit|berry|sweetened)/.test(lower.replace("unsweetened", ""))
+    && (/(nonfat|non-fat|fat free|fat-free|0%)/.test(lower) || /\bsoy\b/.test(lower) || (/almond/.test(lower) && lower.includes("unsweetened")));
   if (lower.includes("cottage cheese")) return /(nonfat|non-fat|fat free|fat-free)/.test(lower) && !/(fruit|pineapple|peach|berry)/.test(lower);
   const words = tokens(lower);
   const set = new Set(words);
   const phraseHit = EXCLUDE_PHRASES.some((p) => lower.includes(p));
   for (const r of RULES) {
     if (!r.req.every((w) => set.has(w))) continue;
+    if (r.anyOf.length && !r.anyOf.every((alts) => alts.some((w) => set.has(w)))) continue;
     if (phraseHit && !EXCLUDE_PHRASES.some((p) => [...r.all].join(" ").includes(p))) continue;
     const blocked = EXCLUDE.some((x) => { const sx = stem(x); return set.has(sx) && !r.all.has(sx); });
     if (!blocked) return true;
