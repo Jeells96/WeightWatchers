@@ -83,7 +83,8 @@ function calc(item, amount, unitIdx) {
     for (const k of Object.keys(item.nutrition || {})) nutrition[k] = +((item.nutrition[k] || 0) * factor).toFixed(2);
   }
   const points = pointsFor(item, factor, Object.keys(nutrition).length ? nutrition : null);
-  return { nutrition, factor, points, label: `${fmtAmt(amount)} ${unitText(u.unit)}` };
+  const amt = Math.abs(amount * 8 - Math.round(amount * 8)) < 1e-6 ? fmtAmt(amount) : String(+amount.toFixed(2));
+  return { nutrition, factor, points, label: `${amt} ${unitText(u.unit)}` };
 }
 
 // ---- Logging ----------------------------------------------------------------
@@ -297,7 +298,8 @@ export function openFoodDetail(item, ctx) {
   const m = model(item);
   let { whole, frac } = split(m.defAmt);
   let unitIdx = 0;
-  const amount = () => whole + FRACTIONS[frac].v;
+  let typed = null; // amount typed into the servings box overrides the picker
+  const amount = () => (typed != null ? typed : whole + FRACTIONS[frac].v);
   let r = calc(item, amount(), unitIdx);
 
   const isFav = () => (state.data.favorites || []).some((f) => f.name === item.name && (f.brand || "") === (item.brand || ""));
@@ -320,8 +322,15 @@ export function openFoodDetail(item, ctx) {
   const servVal = h("div", { class: "sv-val" });
   const picker = h("div", { class: "picker" });
   const servBox = h("div", { class: "serv-box" });
-  const servRow = h("button", { class: "sv-row" }, h("div", {}, "Serving"), servVal);
-  servRow.addEventListener("click", () => servBox.classList.toggle("open"));
+  const servInput = h("input", { class: "sv-input", type: "text", inputmode: "decimal", "aria-label": "Number of servings" });
+  servInput.addEventListener("input", () => {
+    const v = parseFloat(servInput.value.replace(",", "."));
+    if (Number.isFinite(v) && v >= 0) { typed = v; update(); }
+  });
+  servInput.addEventListener("focus", () => servInput.select());
+  const unitBtn = h("button", { class: "sv-unit" });
+  unitBtn.addEventListener("click", () => servBox.classList.toggle("open"));
+  const servRow = h("div", { class: "sv-row" }, h("div", {}, "Servings"), h("div", { class: "sv-right" }, servInput, unitBtn));
   servBox.append(servRow, picker);
 
   const insights = h("div");
@@ -354,7 +363,8 @@ export function openFoodDetail(item, ctx) {
     r = calc(item, amount(), unitIdx);
     ptsCircle.textContent = String(r.points);
     ptsCircle.classList.toggle("edited", !!calibratedEntry(item));
-    servVal.textContent = r.label;
+    if (document.activeElement !== servInput) servInput.value = String(+amount().toFixed(2));
+    unitBtn.replaceChildren(unitText(m.units[unitIdx].unit), icon("chevronDown"));
     renderMeal();
     const e = calibratedEntry(item);
     howBody.replaceChildren(
@@ -390,13 +400,13 @@ export function openFoodDetail(item, ctx) {
     const max = m.units[unitIdx]?.grams === 1 ? 1000 : 50;
     const wholes = Array.from({ length: max + 1 }, (_, i) => String(i));
     picker.replaceChildren(
-      wheel(wholes, whole, (i) => { whole = i; update(); }),
-      wheel(FRACTIONS.map((f) => f.label), frac, (i) => { frac = i; update(); }),
+      wheel(wholes, whole, (i) => { typed = null; whole = i; update(); }),
+      wheel(FRACTIONS.map((f) => f.label), frac, (i) => { typed = null; frac = i; update(); }),
       wheel(m.units.map((u) => unitText(u.unit)), unitIdx, (i) => {
         if (i === unitIdx) return;
         // keep the same amount of food when switching units
         const from = m.units[unitIdx], to = m.units[i];
-        if (from.grams && to.grams) { const s2 = split((amount() * from.grams) / to.grams); whole = s2.whole; frac = s2.frac; }
+        if (from.grams && to.grams) { const conv = (amount() * from.grams) / to.grams; const s2 = split(conv); whole = s2.whole; frac = s2.frac; typed = +conv.toFixed(2); }
         unitIdx = i; buildPicker(); update();
       }, true));
   }

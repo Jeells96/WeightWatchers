@@ -765,3 +765,9 @@ body { background: var(--bg); }
 .ob-tip-tag { display: inline-block; padding: 6px 12px; border-radius: 8px; background: var(--brand-300); color: #121318; font-size: 13px; font-weight: 800; letter-spacing: .4px; }
 .ob-tip p { margin: 12px 0 0; font-size: 16px; line-height: 1.45; color: #dfe4ff; }
 .setup-body .zp-card { margin: 4px -6px; }
+.sv-row { cursor: default; }
+.sv-right { display: flex; align-items: center; gap: 8px; }
+.sv-input { width: 76px; height: 42px; text-align: center; font-size: 18px; font-weight: 700; border-radius: 12px; border: 1.5px solid #3a4160; background: var(--input-bg); color: #fff; }
+.sv-input:focus { outline: none; border-color: var(--brand-300); }
+.sv-unit { display: inline-flex; align-items: center; gap: 4px; font-size: 17px; color: #eef0ff; max-width: 150px; }
+.sv-unit .ico { width: 18px; height: 18px; flex: 0 0 auto; }
