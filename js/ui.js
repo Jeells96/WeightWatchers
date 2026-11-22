@@ -149,21 +149,26 @@ export function weightChart(points, { goal, width = 340, height = 150 } = {}) {
 }
 
 // ---- Bottom sheet modal -------------------------------------------------
-export function sheet(title, bodyNode, { full = false } = {}) {
+export function sheet(title, bodyNode, { full = false, header = null, footer = null, onClose = null } = {}) {
   const overlay = h("div", { class: "sheet-overlay" });
   const panel = h("div", { class: "sheet " + (full ? "sheet-full" : "") });
-  const header = h("div", { class: "sheet-head" },
-    h("button", { class: "icon-btn", onClick: close }, icon("close")),
-    h("div", { class: "sheet-title" }, title),
-    h("span", { style: { width: "34px" } }),
-  );
-  panel.append(header, bodyNode);
+  const head = header
+    ? (typeof header === "function" ? header(close) : header)
+    : h("div", { class: "sheet-head" },
+        h("span", { style: { width: "34px" } }),
+        h("div", { class: "sheet-title" }, title),
+        h("button", { class: "icon-btn", onClick: close, "aria-label": "Close" }, icon("close")));
+  panel.append(head, bodyNode);
+  if (footer) panel.append(h("div", { class: "sheet-foot" }, footer));
   overlay.append(panel);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
   document.body.append(overlay);
   requestAnimationFrame(() => overlay.classList.add("open"));
+  let closed = false;
   function close() {
+    if (closed) return; closed = true;
     overlay.classList.remove("open");
+    if (onClose) onClose();
     setTimeout(() => overlay.remove(), 220);
   }
   return { close, panel };

@@ -1,10 +1,12 @@
-// The add-food experience: search + barcode + serving adjustment, shared by
-// the My Day screen and the Food tab.
-import { h, icon, sheet, toast, fmt } from "./ui.js";
-import { searchLocal, searchOpenFoodFacts, searchUSDA, lookupBarcode, finalizeItem, foodCategories, foodsInCategory } from "./foods.js";
-import { pointsFromNutrition } from "./points.js";
+// Food tracking, modeled on the WW flow:
+//   Track sheet  – "Lunch ⌄" + date, search pill, barcode button, tracked items,
+//                  recents, browse, and search results (+ / protein / fiber / Points)
+//   Track food   – Points circle (tap to correct), "How do Points work?",
+//                  serving picker (whole · fraction · unit), insights, nutrition, Track
+import { h, icon, sheet, toast, prettyDate } from "./ui.js";
+import { searchLocal, searchOpenFoodFacts, searchUSDA, lookupBarcode, foodCategories, foodsInCategory } from "./foods.js";
 import { state, mutate, dayLog, todayKey } from "./state.js";
-import { effectivePoints, calibratedEntry, saveCalibration, removeByKey, calKey, biasValue } from "./calibrations.js";
+import { pointsFor, calibratedEntry, saveCalibration, removeByKey, calKey } from "./calibrations.js";
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },
@@ -12,301 +14,432 @@ const MEALS = [
   { key: "dinner", label: "Dinner" },
   { key: "snack", label: "Snacks" },
 ];
+const mealLabel = (k) => (MEALS.find((m) => m.key === k) || MEALS[0]).label;
 
+// ---- Amounts & units --------------------------------------------------------
+const FRACTIONS = [
+  { label: "–", v: 0 }, { label: "⅛", v: 0.125 }, { label: "¼", v: 0.25 }, { label: "⅓", v: 1 / 3 },
+  { label: "½", v: 0.5 }, { label: "⅔", v: 2 / 3 }, { label: "¾", v: 0.75 },
+];
+const NKEYS = ["calories", "fat", "satFat", "carbs", "sugar", "addedSugar", "protein", "fiber", "sodium"];
+
+function split(a) {
+  let whole = Math.floor(a + 1e-9), rest = a - whole, frac = 0, best = 9;
+  FRACTIONS.forEach((f, i) => { const d = Math.abs(f.v - rest); if (d < best) { best = d; frac = i; } });
+  if (rest > 0.875) { whole += 1; frac = 0; }
+  return { whole, frac };
+}
+function fmtAmt(a) {
+  const { whole, frac } = split(a);
+  const f = frac ? FRACTIONS[frac].label : "";
+  return !whole && f ? f : f ? `${whole} ${f}` : String(whole);
+}
+function parseServing(s) {
+  const t = String(s || "").trim();
+  const m = t.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)\s*(.*)$/);
+  if (!m) return { qty: 1, unit: t || "serving" };
+  let qty;
+  const q = m[1];
+  if (q.includes(" ")) { const [w, fr] = q.split(/\s+/); const [a, b] = fr.split("/"); qty = +w + a / b; }
+  else if (q.includes("/")) { const [a, b] = q.split("/"); qty = a / b; }
+  else qty = parseFloat(q);
+  return { qty: qty > 0 ? qty : 1, unit: (m[2] || "").replace(/^[,\s]+/, "").trim() || "serving" };
+}
+function unitText(u) {
+  if (/^[a-z]+$/i.test(u) && !["g", "oz", "lb", "tsp", "tbsp", "ml", "medium", "large", "small", "serving"].includes(u.toLowerCase())) return `${u}(s)`;
+  return u;
+}
+
+// Picker model for a food: units with grams-per-unit, and the default amount.
+function model(item) {
+  if (item._model) return item._model;
+  const s = parseServing(item.serving);
+  const n = item.nutrition || {};
+  let m;
+  if (item.grams) {
+    const per100 = {};
+    for (const k of NKEYS) if (n[k] != null) per100[k] = n[k] * 100 / item.grams;
+    const units = [{ unit: s.unit, grams: item.grams / s.qty }];
+    for (const u of [{ unit: "g", grams: 1 }, { unit: "oz", grams: 28.35 }, { unit: "lb", grams: 453.6 }]) {
+      if (!units.some((x) => x.unit.toLowerCase() === u.unit)) units.push(u);
+    }
+    m = { per100, units, defAmt: s.qty, defGrams: item.grams };
+  } else {
+    m = { per100: null, units: [{ unit: s.unit, grams: null }], defAmt: s.qty, defGrams: null };
+  }
+  Object.defineProperty(item, "_model", { value: m, enumerable: false });
+  return m;
+}
+function calc(item, amount, unitIdx) {
+  const m = model(item);
+  const u = m.units[unitIdx];
+  let nutrition = {}, factor;
+  if (m.per100 && u.grams != null) {
+    const g = amount * u.grams;
+    for (const k of Object.keys(m.per100)) nutrition[k] = +(m.per100[k] * g / 100).toFixed(2);
+    factor = g / m.defGrams;
+  } else {
+    factor = amount / (m.defAmt || 1);
+    for (const k of Object.keys(item.nutrition || {})) nutrition[k] = +((item.nutrition[k] || 0) * factor).toFixed(2);
+  }
+  const points = pointsFor(item, factor, Object.keys(nutrition).length ? nutrition : null);
+  return { nutrition, factor, points, label: `${fmtAmt(amount)} ${unitText(u.unit)}` };
+}
+
+// ---- Logging ----------------------------------------------------------------
+function track(item, meal, dateKey, amount, unitIdx) {
+  const r = calc(item, amount, unitIdx);
+  const clean = { ...item };
+  delete clean._real;
+  mutate((d) => {
+    dayLog(dateKey).meals[meal].push({
+      id: item.id, name: item.name, brand: item.brand || "", serving: r.label,
+      points: r.points, qty: 1, nutrition: r.nutrition, zero: !!item.zero, loggedAt: Date.now(), ref: clean,
+    });
+    d.recents = [clean, ...(d.recents || []).filter((x) => !(x.name === item.name && (x.brand || "") === (item.brand || "")))].slice(0, 30);
+  });
+  return r;
+}
+
+// ============================================================================
+// Track sheet
+// ============================================================================
 export function openAddFood(defaultMeal = "breakfast", dateKey = todayKey(), opts = {}) {
   let meal = defaultMeal;
-  const body = h("div", { class: "addfood" });
+  let query = "";
+  let token = 0;
+  let browseCat = null;
 
-  const mealRow = h("div", { class: "seg" },
-    ...MEALS.map((m) =>
-      h("button", {
-        class: "seg-btn" + (m.key === meal ? " on" : ""),
-        onClick: (e) => {
-          meal = m.key;
-          body.querySelectorAll(".seg-btn").forEach((b) => b.classList.remove("on"));
-          e.currentTarget.classList.add("on");
-        },
-      }, m.label)));
-
-  const input = h("input", {
-    class: "search-input", type: "search", placeholder: "Search foods…",
-    autocomplete: "off", autocorrect: "off", autocapitalize: "none",
+  const titleBtn = h("button", { class: "tr-title" });
+  const renderTitle = () => titleBtn.replaceChildren(h("span", {}, mealLabel(meal)), icon("chevronDown"));
+  renderTitle();
+  titleBtn.addEventListener("click", () => {
+    const menu = h("div", { class: "meal-menu" }, ...MEALS.map((m) => h("button", {
+      class: "mm-opt" + (m.key === meal ? " on" : ""),
+      onClick: () => { meal = m.key; renderTitle(); menu.remove(); render(); },
+    }, m.label)));
+    head.append(menu);
+    setTimeout(() => document.addEventListener("click", function off(e) { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("click", off); } }), 0);
   });
-  const scanBtn = h("button", { class: "scan-btn", onClick: () => startScan() }, icon("barcode"), "Scan");
-  const searchRow = h("div", { class: "search-row" },
-    h("div", { class: "search-field" }, icon("search", "search-ico"), input), scanBtn);
 
-  const tabs = h("div", { class: "pill-tabs" });
-  const results = h("div", { class: "results" });
+  let sh;
+  const head = h("div", { class: "tr-head" },
+    h("button", { class: "tr-icon", "aria-label": "Quick add", onClick: () => quickAdd() }, icon("plus")),
+    h("div", { class: "tr-center" }, titleBtn, h("div", { class: "tr-date" }, prettyDate(dateKey) === "Today" ? `Today, ${shortDate(dateKey)}` : prettyDate(dateKey))),
+    h("button", { class: "tr-icon", "aria-label": "Close", onClick: () => sh.close() }, icon("close")));
 
-  const TABS = [
-    { key: "search", label: "Search" },
-    { key: "recents", label: "Recent" },
-    { key: "favorites", label: "Favorites" },
-    { key: "quick", label: "Quick add" },
-  ];
-  let active = "search";
-  function renderTabs() {
-    tabs.replaceChildren(...TABS.map((t) =>
-      h("button", { class: "pill" + (t.key === active ? " on" : ""), onClick: () => { active = t.key; renderTabs(); runTab(); } }, t.label)));
-  }
+  const input = h("input", { class: "tr-input", type: "search", placeholder: "Search and track food", autocomplete: "off", autocorrect: "off", autocapitalize: "none" });
+  const clearBtn = h("button", { class: "tr-clear", "aria-label": "Clear", onClick: () => { input.value = ""; query = ""; render(); input.focus(); } }, icon("close"));
+  const searchRow = h("div", { class: "tr-search" },
+    h("div", { class: "tr-pill" }, icon("search"), input, clearBtn),
+    h("button", { class: "tr-circle", "aria-label": "Scan barcode", onClick: () => startScan() }, icon("barcode")));
+  const results = h("div", { class: "tr-results" });
+  const body = h("div", { class: "tr-body" }, searchRow, results);
 
-  function runTab() {
-    if (active === "recents") showList(state.data.recents || [], "No recent foods yet.");
-    else if (active === "favorites") showList(state.data.favorites || [], "Tap the star on any food to save it here.");
-    else if (active === "quick") showQuickAdd();
-    else doSearch(input.value);
-  }
+  sh = sheet(null, body, { full: true, header: head });
 
-  function showList(items, empty) {
-    results.replaceChildren();
-    if (!items.length) { results.append(emptyState(empty)); return; }
-    items.forEach((it) => results.append(foodRow(it)));
-  }
+  let t;
+  input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { query = input.value.trim(); browseCat = null; render(); }, 260); });
 
-  function emptyState(msg) { return h("div", { class: "empty" }, msg); }
+  const ctx = { getMeal: () => meal, dateKey, onTracked: () => render() };
+  render();
+  if (opts.scan) setTimeout(() => startScan(), 300);
+  else setTimeout(() => input.focus(), 350);
+  return sh;
 
-  let searchToken = 0;
-  async function doSearch(q) {
-    const query = q.trim();
-    if (!query) { showBrowse(); return; }
-    const token = ++searchToken;
-    // Instant local results first.
-    const local = searchLocal(query);
-    const header = (label) => h("div", { class: "results-group" }, label);
-    const render = (localItems, remoteItems, searching) => {
-      const nodes = [];
-      if (localItems.length) { nodes.push(header("Common foods")); localItems.forEach((it) => nodes.push(foodRow(it))); }
-      if (searching) nodes.push(h("div", { class: "searching" }, h("span", { class: "mini-spin" }), "Searching the food database…"));
-      else if (remoteItems && remoteItems.length) { nodes.push(header("All foods")); remoteItems.forEach((it) => nodes.push(foodRow(it))); }
-      if (!localItems.length && !searching && (!remoteItems || !remoteItems.length)) {
-        nodes.push(emptyState("No matches. Scan the barcode, or use Quick add to enter points yourself."));
-      }
-      results.replaceChildren(...nodes);
-    };
-    render(local, null, true);
-    // Comprehensive database: USDA first (huge, generic + branded), then
-    // fall back to Open Food Facts if USDA is unavailable or empty.
-    let remote = [];
-    try {
-      remote = await searchUSDA(query);
-    } catch {
-      try { remote = await searchOpenFoodFacts(query); } catch { remote = []; }
-    }
-    if (token !== searchToken) return;
-    if (!remote.length) { try { remote = await searchOpenFoodFacts(query); } catch {} }
-    if (token !== searchToken) return;
-    const seen = new Set(local.map((x) => x.name.toLowerCase()));
-    const filtered = remote.filter((x) => !seen.has(x.name.toLowerCase()));
-    render(local, filtered, false);
-  }
-
-  // Browse-by-category when the search box is empty.
-  function showBrowse() {
+  function render() {
+    clearBtn.style.visibility = input.value ? "visible" : "hidden";
+    if (query) return renderSearch();
     const nodes = [];
-    const recents = state.data.recents || [];
-    if (recents.length) {
-      nodes.push(h("div", { class: "results-group" }, "Recent"));
-      recents.slice(0, 5).forEach((it) => nodes.push(foodRow(it)));
+    if (browseCat) {
+      nodes.push(h("button", { class: "cat-back", onClick: () => { browseCat = null; render(); } }, icon("back"), "All categories"),
+        h("div", { class: "tr-label" }, browseCat.toUpperCase()), ...foodsInCategory(browseCat).map((it) => row(it)));
+      return results.replaceChildren(...nodes);
     }
-    nodes.push(h("div", { class: "results-group" }, "Browse foods"));
+    const logged = dayLog(dateKey).meals[meal] || [];
+    if (logged.length) {
+      nodes.push(h("div", { class: "tr-label" }, `TRACKED IN ${mealLabel(meal).toUpperCase()}`));
+      logged.forEach((it, idx) => nodes.push(loggedRow(it, idx)));
+    }
+    const favs = state.data.favorites || [];
+    if (favs.length) { nodes.push(h("div", { class: "tr-label" }, "FAVORITES")); favs.slice(0, 6).forEach((it) => nodes.push(row(it))); }
+    const recents = state.data.recents || [];
+    if (recents.length) { nodes.push(h("div", { class: "tr-label" }, "RECENTLY TRACKED")); recents.slice(0, 8).forEach((it) => nodes.push(row(it))); }
+    if (!logged.length && !recents.length && !favs.length) nodes.push(emptyArt());
+    nodes.push(h("div", { class: "tr-label" }, "BROWSE FOODS"));
     const grid = h("div", { class: "cat-grid" });
-    foodCategories().forEach((c) => grid.append(
-      h("button", { class: "cat-card", onClick: () => openCategory(c.name) },
-        h("span", { class: "cat-emoji" }, c.icon),
-        h("span", { class: "cat-name" }, c.name),
-        h("span", { class: "cat-count" }, `${c.count}`))));
+    foodCategories().forEach((c) => grid.append(h("button", { class: "cat-card", onClick: () => { browseCat = c.name; render(); } },
+      h("span", { class: "cat-emoji" }, c.icon), h("span", { class: "cat-name" }, c.name), h("span", { class: "cat-count" }, String(c.count)))));
     nodes.push(grid);
     results.replaceChildren(...nodes);
   }
 
-  function openCategory(name) {
-    const items = foodsInCategory(name);
-    const nodes = [h("button", { class: "cat-back", onClick: () => showBrowse() }, icon("back"), "All categories"),
-      h("div", { class: "results-group" }, name)];
-    items.forEach((it) => nodes.push(foodRow(it)));
-    results.replaceChildren(...nodes);
+  async function renderSearch() {
+    const my = ++token;
+    const local = searchLocal(query);
+    const show = (remote, loading) => {
+      const nodes = [h("div", { class: "tr-label" }, "SEARCH RESULTS")];
+      local.slice(0, 12).forEach((it) => nodes.push(row(it)));
+      if (remote) remote.forEach((it) => nodes.push(row(it)));
+      if (loading) nodes.push(h("div", { class: "searching" }, h("span", { class: "mini-spin" }), "Searching more foods…"));
+      if (!loading && !local.length && !(remote && remote.length)) nodes.push(h("div", { class: "empty" }, "No matches. Try a brand name, scan the barcode, or tap + to quick add."));
+      results.replaceChildren(...nodes);
+    };
+    show(null, true);
+    let remote = [];
+    try { remote = await searchUSDA(query); } catch { try { remote = await searchOpenFoodFacts(query); } catch {} }
+    if (my !== token) return;
+    const seen = new Set(local.map((x) => x.name.toLowerCase()));
+    show(remote.filter((x) => !seen.has(x.name.toLowerCase())), false);
   }
 
-  function foodRow(item) {
-    const pts = effectivePoints(item);
-    const edited = calibratedEntry(item) != null;
-    return h("button", { class: "food-row", onClick: () => openDetail(item) },
-      h("div", { class: "food-main" },
-        h("div", { class: "food-name" }, item.name),
-        h("div", { class: "food-sub" }, [item.brand, item.serving].filter(Boolean).join(" · "))),
-      h("div", { class: "food-right" },
-        h("div", { class: "pts-badge" + (item.zero ? " zero" : "") + (edited ? " edited" : "") }, String(pts)),
-        h("div", { class: "pts-word" }, edited ? "edited" : "Points")));
+  function row(item) {
+    const r = calc(item, model(item).defAmt, 0);
+    const n = item.nutrition || {};
+    const add = h("button", { class: "res-add", "aria-label": "Track " + item.name }, icon("plus"));
+    add.addEventListener("click", (e) => {
+      e.stopPropagation();
+      track(item, meal, dateKey, model(item).defAmt, 0);
+      add.classList.add("done"); add.replaceChildren(icon("check"));
+      toast(`Tracked to ${mealLabel(meal)}`);
+    });
+    return h("div", { class: "res-row", onClick: () => openFoodDetail(item, ctx) },
+      add,
+      h("div", { class: "res-main" },
+        h("div", { class: "res-name" }, item.name),
+        h("div", { class: "res-sub" }, item.serving || r.label)),
+      h("div", { class: "res-stats" },
+        h("div", { class: "res-macros" },
+          h("div", {}, icon("drumstick"), `${Math.round(n.protein || 0)}g`),
+          h("div", {}, icon("fiber"), `${Math.round(n.fiber || 0)}g`)),
+        h("div", { class: "res-pts" + (item.zero ? " zero" : "") + (calibratedEntry(item) ? " edited" : "") }, String(r.points))));
   }
 
-  function showQuickAdd() {
-    results.replaceChildren();
+  function loggedRow(it, idx) {
+    const n = it.nutrition || {};
+    const q = it.qty || 1;
+    return h("div", { class: "res-row logged" },
+      h("button", { class: "res-add del", "aria-label": "Remove", onClick: () => { mutate(() => dayLog(dateKey).meals[meal].splice(idx, 1)); render(); } }, icon("trash")),
+      h("div", { class: "res-main" }, h("div", { class: "res-name" }, it.name), h("div", { class: "res-sub" }, it.serving || "")),
+      h("div", { class: "res-stats" },
+        h("div", { class: "res-macros" },
+          h("div", {}, icon("drumstick"), `${Math.round((n.protein || 0) * q)}g`),
+          h("div", {}, icon("fiber"), `${Math.round((n.fiber || 0) * q)}g`)),
+        h("div", { class: "res-pts" + (it.points === 0 ? " zero" : "") }, String(Math.round((it.points || 0) * q)))));
+  }
+
+  function emptyArt() {
+    return h("div", { class: "tr-empty" },
+      h("div", { class: "art" },
+        h("div", { class: "art-card a1" }, h("span", { class: "art-ico" }, icon("avocado")), h("i"), h("i", { class: "s" })),
+        h("div", { class: "art-card a2" }, h("span", { class: "art-ico" }, icon("bowl")), h("i"), h("i", { class: "s" })),
+        h("div", { class: "art-card a3" }, h("span", { class: "art-ico" }, icon("drumstick")), h("i"), h("i", { class: "s" }))),
+      h("div", { class: "tr-empty-h" }, "Search for a food to get started"),
+      h("div", { class: "tr-empty-p" }, "Be specific — like grilled chicken breast, Chobani yogurt, or McDonald's fries."));
+  }
+
+  function quickAdd() {
     const name = h("input", { class: "f-input", placeholder: "Food name" });
     const pts = h("input", { class: "f-input", type: "number", inputmode: "numeric", min: "0", placeholder: "Points" });
-    results.append(h("div", { class: "quickadd" },
-      h("label", { class: "f-label" }, "Name"), name,
-      h("label", { class: "f-label" }, "Points"), pts,
-      h("button", {
-        class: "btn-primary", onClick: () => {
-          const p = parseInt(pts.value, 10);
-          if (!name.value.trim() || !Number.isFinite(p)) { toast("Enter a name and points"); return; }
-          addToLog(finalizeItem({ name: name.value.trim(), serving: "1 serving", nutrition: {} }), 1, p);
-        },
-      }, "Add to " + MEALS.find((m) => m.key === meal).label)));
+    const pro = h("input", { class: "f-input", type: "number", inputmode: "decimal", placeholder: "Protein (g, optional)" });
+    const fib = h("input", { class: "f-input", type: "number", inputmode: "decimal", placeholder: "Fiber (g, optional)" });
+    let qs;
+    const save = h("button", { class: "btn-primary big", onClick: () => {
+      const p = parseInt(pts.value, 10);
+      if (!name.value.trim() || !Number.isFinite(p)) { toast("Enter a name and Points"); return; }
+      const item = { id: "q_" + Date.now(), name: name.value.trim(), brand: "", serving: "1 serving", grams: null,
+        nutrition: { protein: parseFloat(pro.value) || 0, fiber: parseFloat(fib.value) || 0 }, zero: p === 0, points: p, pointsRaw: p };
+      mutate((d) => {
+        dayLog(dateKey).meals[meal].push({ id: item.id, name: item.name, brand: "", serving: "1 serving", points: p, qty: 1, nutrition: item.nutrition, loggedAt: Date.now(), ref: item });
+        d.recents = [item, ...(d.recents || [])].slice(0, 30);
+      });
+      toast(`Tracked to ${mealLabel(meal)}`); qs.close(); render();
+    } }, "Track");
+    qs = sheet("Quick add", h("div", { class: "quickadd pad" }, name, pts, pro, fib), { footer: save });
+    setTimeout(() => name.focus(), 300);
   }
 
-  function openDetail(item) {
-    let qty = 1;
-    let zero = item.zero;
-    const n = item.nutrition || {};
-    const calculated = () => (item.points ?? pointsFromNutrition(n) ?? 0);
-    const hasEntry = () => calibratedEntry(item) != null;
-    // Per-serving points: exact correction if one exists, else calculated + the
-    // shared adjustment (so new foods benefit from everyone's corrections).
-    const perServing = () => {
-      if (zero) return 0;
-      const e = calibratedEntry(item);
-      if (e) return e.entered;
-      return Math.max(0, Math.round(calculated() + biasValue()));
-    };
-
-    const ptsEl = h("div", { class: "detail-pts" });
-    function recompute() {
-      ptsEl.replaceChildren(
-        h("div", { class: "detail-pts-num" }, String(Math.round(perServing() * qty))),
-        h("div", { class: "detail-pts-lbl" }, "Points"));
-    }
-    const qtyEl = h("div", { class: "qty-val" }, "1");
-    const stepper = h("div", { class: "stepper" },
-      h("button", { class: "step", onClick: () => { qty = Math.max(0.5, +(qty - 0.5).toFixed(1)); qtyEl.textContent = qty; recompute(); } }, "–"),
-      qtyEl,
-      h("button", { class: "step", onClick: () => { qty = +(qty + 0.5).toFixed(1); qtyEl.textContent = qty; recompute(); } }, "+"));
-
-    // Editable Points value (per serving) — saved to the shared pool so it
-    // matches next time, for everyone.
-    const ptsField = h("input", { class: "pts-edit-input", type: "number", inputmode: "numeric", min: "0", value: String(perServing()) });
-    const ptsStatus = h("div", { class: "pts-edit-status" });
-    function refreshStatus() {
-      ptsField.value = String(perServing());
-      const e = calibratedEntry(item);
-      ptsStatus.replaceChildren(
-        e != null
-          ? h("span", { class: "edited-tag" }, `Corrected · calculated ${calculated()}` + (e.by ? ` · by ${e.by}` : ""))
-          : h("span", {}, `Auto-calculated${zero ? " · ZeroPoint" : ""}`),
-        e != null ? h("button", { class: "link-btn", onClick: () => { removeByKey(calKey(item)); refreshStatus(); recompute(); } }, "Reset") : null);
-    }
-    const editRow = h("div", { class: "pts-edit" },
-      h("div", { class: "pts-edit-top" },
-        h("div", { class: "pts-edit-label" }, "Points per serving"),
-        ptsField),
-      ptsStatus);
-    ptsField.addEventListener("change", () => {
-      const v = parseInt(ptsField.value, 10);
-      if (!Number.isFinite(v) || v < 0) { refreshStatus(); return; }
-      if (v === calculated() && !zero) { removeByKey(calKey(item)); }
-      else { if (zero) zero = false; saveCalibration(item, v, zero); }
-      refreshStatus(); recompute();
-    });
-
-    const nutr = h("div", { class: "nutr-grid" },
-      nutrCell("Calories", n.calories, "cal"),
-      nutrCell("Protein", n.protein, "g"),
-      nutrCell("Sat fat", n.satFat, "g"),
-      nutrCell("Sugar", n.sugar, "g"));
-
-    const zeroToggle = h("label", { class: "toggle-row" },
-      h("span", {}, "ZeroPoint food"),
-      toggle(zero, (on) => { zero = on; refreshStatus(); recompute(); }));
-
-    recompute(); refreshStatus();
-    const body2 = h("div", { class: "detail" },
-      h("div", { class: "detail-head" },
-        h("div", {},
-          h("div", { class: "detail-name" }, item.name),
-          h("div", { class: "detail-serv" }, [item.brand, item.serving].filter(Boolean).join(" · "))),
-        ptsEl),
-      h("div", { class: "detail-row" }, h("span", {}, "Servings"), stepper),
-      editRow,
-      zeroToggle,
-      Object.keys(n).length ? h("div", { class: "detail-sec-label" }, "Per serving") : null,
-      Object.keys(n).length ? nutr : null,
-      h("button", { class: "btn-primary big", onClick: () => { addToLog(item, qty, perServing()); detail.close(); } },
-        "Add to " + MEALS.find((m) => m.key === meal).label));
-    const detail = sheet(item.name, body2);
-  }
-
-  function nutrCell(label, val, unit) {
-    return h("div", { class: "nutr-cell" },
-      h("div", { class: "nutr-val" }, val == null ? "–" : fmt(val, 1)),
-      h("div", { class: "nutr-lbl" }, label + (val == null ? "" : " " + unit)));
-  }
-
-  function addToLog(item, qty, overridePoints) {
-    const entry = {
-      ...item,
-      qty,
-      points: overridePoints != null ? overridePoints : item.points,
-      loggedAt: Date.now(),
-    };
-    mutate((d) => {
-      const dl = dayLog(dateKey);
-      dl.meals[meal].push(entry);
-      // recents (dedupe by name+brand, cap 30)
-      d.recents = [{ ...item }, ...(d.recents || []).filter((r) => !(r.name === item.name && r.brand === item.brand))].slice(0, 30);
-    });
-    toast(`Added to ${MEALS.find((m) => m.key === meal).label}`);
-  }
-
-  // ---- Barcode scanning ----
+  // ---- Barcode ----
   async function startScan() {
     const video = h("video", { class: "scan-video", playsinline: true, muted: true });
-    const scanBody = h("div", { class: "scanwrap" }, video,
-      h("div", { class: "scan-frame" }),
-      h("div", { class: "scan-hint" }, "Point the camera at a barcode"));
-    const sc = sheet("Scan barcode", scanBody, { full: true });
-    let reader, controls;
+    const scanBody = h("div", { class: "scanwrap" }, video, h("div", { class: "scan-frame" }), h("div", { class: "scan-hint" }, "Point the camera at a barcode"));
+    let controls = null;
+    const sc = sheet("Scan barcode", scanBody, { full: true, onClose: () => { try { controls && controls.stop(); } catch {} } });
     try {
       const mod = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
-      reader = new mod.BrowserMultiFormatReader();
-      controls = await reader.decodeFromVideoDevice(undefined, video, async (result, err, ctrl) => {
-        if (result) {
-          ctrl.stop();
-          sc.close();
-          await handleCode(result.getText());
-        }
+      const reader = new mod.BrowserMultiFormatReader();
+      controls = await reader.decodeFromVideoDevice(undefined, video, async (result) => {
+        if (result) { try { controls.stop(); } catch {} sc.close(); await handleCode(result.getText()); }
       });
-    } catch (e) {
-      scanBody.replaceChildren(h("div", { class: "empty" },
-        "Camera isn't available here. Make sure you allowed camera access, or search by name instead."));
+    } catch {
+      scanBody.replaceChildren(h("div", { class: "empty" }, "Camera isn't available. Allow camera access in Settings, or search by name instead."));
     }
-    const origClose = sc.close;
   }
-
   async function handleCode(code) {
-    toast("Looking up " + code + "…");
+    toast("Looking up barcode…");
     try {
       const item = await lookupBarcode(code);
       if (!item) { toast("Not found — try searching by name"); return; }
-      openDetail(item);
-    } catch { toast("Lookup failed"); }
+      openFoodDetail(item, ctx);
+    } catch { toast("Lookup failed — check your connection"); }
   }
-
-  let t;
-  input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => doSearch(input.value), 260); });
-
-  body.append(mealRow, searchRow, tabs, results);
-  renderTabs();
-  doSearch("");
-  const s = sheet("Add food", body, { full: true });
-  if (opts.scan) setTimeout(() => startScan(), 300);
-  else setTimeout(() => input.focus(), 350);
-  return s;
 }
 
-function toggle(on, cb) {
+function shortDate(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// ============================================================================
+// Track food (detail)
+// ============================================================================
+export function openFoodDetail(item, ctx) {
+  const m = model(item);
+  let { whole, frac } = split(m.defAmt);
+  let unitIdx = 0;
+  const amount = () => whole + FRACTIONS[frac].v;
+  let r = calc(item, amount(), unitIdx);
+
+  const isFav = () => (state.data.favorites || []).some((f) => f.name === item.name && (f.brand || "") === (item.brand || ""));
+  const favBtn = h("button", { class: "tr-icon" + (isFav() ? " on" : ""), "aria-label": "Save to favorites" }, icon("bookmark"));
+  favBtn.addEventListener("click", () => {
+    const was = isFav();
+    mutate((d) => {
+      const rest = (d.favorites || []).filter((f) => !(f.name === item.name && (f.brand || "") === (item.brand || "")));
+      d.favorites = was ? rest : [{ ...item }, ...rest];
+    });
+    favBtn.classList.toggle("on", !was);
+    toast(was ? "Removed from favorites" : "Saved to favorites");
+  });
+
+  let sh;
+  const head = h("div", { class: "tr-head" }, favBtn, h("div", { class: "tr-center" }, h("div", { class: "td-title" }, "Track food")),
+    h("button", { class: "tr-icon", "aria-label": "Close", onClick: () => sh.close() }, icon("close")));
+
+  const ptsCircle = h("button", { class: "td-pts", "aria-label": "Correct Points" });
+  const servVal = h("div", { class: "sv-val" });
+  const picker = h("div", { class: "picker" });
+  const servBox = h("div", { class: "serv-box" });
+  const servRow = h("button", { class: "sv-row" }, h("div", {}, "Serving"), servVal);
+  servRow.addEventListener("click", () => servBox.classList.toggle("open"));
+  servBox.append(servRow, picker);
+
+  const insights = h("div");
+  const table = h("div");
+  const howBody = h("div", { class: "how-body" });
+  const how = h("div", { class: "how" },
+    h("button", { class: "how-btn", onClick: () => how.classList.toggle("open") }, "How do Points work?", icon("chevronDown")),
+    howBody);
+
+  const mealLine = h("button", { class: "td-meal" });
+  const renderMeal = () => mealLine.replaceChildren(`Tracking to ${mealLabel(ctx.getMeal())} · ${prettyDate(ctx.dateKey)}`);
+
+  const body = h("div", { class: "td-body" },
+    h("div", { class: "td-top" },
+      h("div", {}, h("div", { class: "td-name" }, item.name), item.brand && !item.name.startsWith(item.brand) ? h("div", { class: "td-brand" }, item.brand) : null),
+      ptsCircle),
+    mealLine, how, servBox, insights, table);
+  const trackBtn = h("button", { class: "btn-track", onClick: () => {
+    track(item, ctx.getMeal(), ctx.dateKey, amount(), unitIdx);
+    toast(`Tracked to ${mealLabel(ctx.getMeal())}`);
+    sh.close(); ctx.onTracked && ctx.onTracked();
+  } }, "Track");
+
+  sh = sheet(null, body, { full: true, header: head, footer: trackBtn });
+  ptsCircle.addEventListener("click", correct);
+  buildPicker();
+  update();
+
+  function update() {
+    r = calc(item, amount(), unitIdx);
+    ptsCircle.textContent = String(r.points);
+    ptsCircle.classList.toggle("edited", !!calibratedEntry(item));
+    servVal.textContent = r.label;
+    renderMeal();
+    const e = calibratedEntry(item);
+    howBody.replaceChildren(
+      h("p", {}, "Points add up the calories, saturated fat, sugar and added sugar in a food, and give credit for protein and fiber. ZeroPoint foods don't count against your budget."),
+      item.zero ? h("p", { class: "how-zero" }, "⭐ This is a ZeroPoint food.") : null,
+      h("p", {}, e ? `Corrected to match WW${e.by ? " by " + e.by : ""}. Calculated value: ${Math.round((item.pointsRaw ?? item.points ?? 0) * r.factor)}.` : "Number doesn't match the WW app? Tap the Points circle to correct it — everyone's corrections are shared."),
+      e ? h("button", { class: "link-btn", onClick: () => { removeByKey(calKey(item)); update(); } }, "Reset to calculated") : null);
+
+    const n = r.nutrition;
+    const chips = [];
+    if ((n.protein || 0) >= 10) chips.push(["drumstick", "Higher source of protein"]);
+    if ((n.fiber || 0) >= 5) chips.push(["fiber", "Good source of fiber"]);
+    if ((n.sodium || 0) >= 600) chips.push(["salt", "Higher in sodium"]);
+    if ((n.addedSugar || 0) >= 10 || (n.sugar || 0) >= 20) chips.push(["flame", "Higher in sugar"]);
+    if ((n.satFat || 0) >= 5) chips.push(["avocado", "Higher in saturated fat"]);
+    insights.replaceChildren(...(chips.length ? [h("div", { class: "box" },
+      h("div", { class: "box-h" }, "Nutritional Insights"),
+      h("div", { class: "chips" }, ...chips.map(([ic, t]) => h("div", { class: "chip" }, icon(ic), t))))] : []));
+
+    const has = Object.keys(n).length > 0;
+    const v = (x, u = "g") => (x == null ? "–" : `${x >= 10 || x === 0 ? Math.round(x) : +x.toFixed(1)}${u ? " " + u : ""}`);
+    const rowN = (label, val, cls = "") => h("div", { class: "nt-row " + cls }, h("span", {}, label), h("span", {}, val));
+    table.replaceChildren(...(has ? [h("div", { class: "box" },
+      h("div", { class: "box-h" }, "Nutritional Information"),
+      rowN("Calories", n.calories == null ? "–" : String(Math.round(n.calories))),
+      rowN("Fat", v(n.fat)), rowN("Saturated Fat", v(n.satFat), "sub"),
+      rowN("Sodium", v(n.sodium, "mg")),
+      rowN("Carbohydrates", v(n.carbs)), rowN("Fiber", v(n.fiber), "sub"), rowN("Total Sugars", v(n.sugar), "sub"), rowN("Added Sugar", v(n.addedSugar), "sub2"),
+      rowN("Protein", v(n.protein)))] : []));
+  }
+
+  function buildPicker() {
+    const max = m.units[unitIdx]?.grams === 1 ? 1000 : 50;
+    const wholes = Array.from({ length: max + 1 }, (_, i) => String(i));
+    picker.replaceChildren(
+      wheel(wholes, whole, (i) => { whole = i; update(); }),
+      wheel(FRACTIONS.map((f) => f.label), frac, (i) => { frac = i; update(); }),
+      wheel(m.units.map((u) => unitText(u.unit)), unitIdx, (i) => {
+        if (i === unitIdx) return;
+        // keep the same amount of food when switching units
+        const from = m.units[unitIdx], to = m.units[i];
+        if (from.grams && to.grams) { const s2 = split((amount() * from.grams) / to.grams); whole = s2.whole; frac = s2.frac; }
+        unitIdx = i; buildPicker(); update();
+      }, true));
+  }
+
+  function correct() {
+    const inp = h("input", { class: "f-input big-input", type: "number", inputmode: "numeric", min: "0", value: String(r.points) });
+    let cs;
+    const save = h("button", { class: "btn-primary big", onClick: () => {
+      const val = parseFloat(inp.value);
+      if (!Number.isFinite(val) || val < 0) { toast("Enter a number"); return; }
+      saveCalibration(item, val / (r.factor || 1), false);
+      toast("Points corrected"); cs.close(); update();
+    } }, "Save");
+    cs = sheet("Correct Points", h("div", { class: "pad" },
+      h("p", { class: "setup-p" }, `What does the WW app say ${r.label} of ${item.name} is? Your correction is saved for everyone and scales with the amount.`), inp), { footer: save });
+    setTimeout(() => { inp.focus(); inp.select(); }, 300);
+  }
+}
+
+// Scroll-snap wheel column (iOS picker style).
+function wheel(labels, selected, onChange, wide = false) {
+  const ITEM = 40;
+  const col = h("div", { class: "wheel" + (wide ? " wide" : "") });
+  col.append(h("div", { class: "wheel-pad" }), ...labels.map((l) => h("div", { class: "wheel-item" }, l)), h("div", { class: "wheel-pad" }));
+  const mark = (i) => [...col.querySelectorAll(".wheel-item")].forEach((el, k) => el.classList.toggle("on", k === i));
+  let cur = selected, tm;
+  requestAnimationFrame(() => { col.scrollTop = selected * ITEM; mark(selected); });
+  col.addEventListener("scroll", () => {
+    const i = Math.max(0, Math.min(labels.length - 1, Math.round(col.scrollTop / ITEM)));
+    mark(i);
+    clearTimeout(tm);
+    tm = setTimeout(() => { if (i !== cur) { cur = i; onChange(i); } }, 120);
+  });
+  col.addEventListener("click", (e) => {
+    const items = [...col.querySelectorAll(".wheel-item")];
+    const k = items.indexOf(e.target);
+    if (k >= 0) col.scrollTo({ top: k * ITEM, behavior: "smooth" });
+  });
+  return col;
+}
+
+export function toggle(on, cb) {
   const el = h("button", { class: "switch" + (on ? " on" : ""), type: "button" }, h("span", { class: "knob" }));
   el.addEventListener("click", () => { on = !on; el.classList.toggle("on", on); cb(on); });
   return el;
 }
-export { toggle };
