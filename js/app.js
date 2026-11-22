@@ -8,7 +8,8 @@ import { renderActivity } from "./views/activity.js";
 import { renderSettings } from "./views/settings.js";
 import { renderFriends } from "./views/friends.js";
 import { renderCorrections } from "./views/corrections.js";
-import { openAddFood } from "./foodsearch.js";
+import { openActionMenu } from "./actions.js";
+import { getSelectedDate } from "./views/myday.js";
 import { initCalibrations } from "./calibrations.js";
 
 const root = document.getElementById("app");
@@ -46,7 +47,7 @@ function renderApp() {
   const bar = h("nav", { class: "tabbar" });
   TABS.forEach((t) => {
     if (t.center) {
-      bar.append(h("button", { class: "tab center", onClick: () => openAddFood(currentMealGuess()) },
+      bar.append(h("button", { class: "tab center", onClick: () => openActionMenu(getSelectedDate()) },
         h("div", { class: "fab" }, icon("plus"))));
       return;
     }

@@ -7,6 +7,8 @@ import {
   latestWeight, trackedOn,
 } from "../state.js";
 import { openAddFood } from "../foodsearch.js";
+import { openActivityLog } from "./activity.js";
+import { openWater } from "../actions.js";
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast", icon: "coffee" },
@@ -113,7 +115,7 @@ export function renderMyDay() {
       tile("avocado", "Fats", `${Math.round(t.fat)} g`, `${tg.fat[0]}–${tg.fat[1]}g`),
       tile("fiber", "Fiber", `${Math.round(t.fiber)} g`, `At least ${tg.fiber}g`),
       tile("salt", "Sodium", `${Math.round(t.sodium)} mg`, `Under ${tg.sodium}mg`),
-      tile("water", "Water", `${water} cups`, "Tap to add a cup", () => mutate(() => { dayLog(selDate).water = water + 1; })))));
+      tile("water", "Water", `${water} cups`, "Goal 8 cups", () => openWater(selDate)))));
 
   // ---- Weight / Activity ----
   const unit = s.units === "metric" ? "kg" : "lbs";
@@ -133,8 +135,8 @@ export function renderMyDay() {
         h("span", {}, `Start: ${goal.startWeight != null ? +goal.startWeight : "—"}`),
         h("span", {}, `Goal: ${goal.goalWeight != null ? +goal.goalWeight : "—"}`)),
       h("div", { class: "mini-bar" }, h("div", { style: { width: pct * 100 + "%" } }))),
-    h("div", { class: "mini-card" },
-      h("div", { class: "mini-head" }, "ACTIVITY"),
+    h("div", { class: "mini-card", onClick: () => openActivityLog(selDate) },
+      h("div", { class: "mini-head" }, "ACTIVITY", icon("plus")),
       h("div", { class: "mini-big" }, String(b.activityToday)),
       h("div", { class: "mini-sub" }, h("span", {}, "activity Points today")),
       h("div", { class: "mini-sub dim" }, h("span", {}, `${b.activityThisWeek} this week`)))));

@@ -68,27 +68,29 @@ export function renderWeight() {
     return h("div", { class: "wh-mini" }, h("div", { class: "wh-mini-num" }, `${val}`), h("div", { class: "wh-mini-lbl" }, `${label} (${u})`));
   }
   function removeWeigh(date) { mutate((d) => { d.weighIns = d.weighIns.filter((w) => w.date !== date); }); }
+}
 
-  function openWeighIn() {
-    const wt = h("input", { class: "f-input big-input", type: "number", inputmode: "decimal", step: "0.1", placeholder: current != null ? fmt(current, 1) : "0.0" });
-    const dateInput = h("input", { class: "f-input", type: "date", value: todayKey(), max: todayKey() });
-    const body = h("div", { class: "weighin" },
-      h("label", { class: "f-label" }, `Weight (${unit})`), wt,
-      h("label", { class: "f-label" }, "Date"), dateInput,
-      h("button", {
-        class: "btn-primary big", onClick: () => {
-          const v = parseFloat(wt.value);
-          if (!Number.isFinite(v)) { toast("Enter a weight"); return; }
-          const date = dateInput.value || todayKey();
-          mutate((d) => {
-            d.weighIns = [...(d.weighIns || []).filter((w) => w.date !== date), { date, weight: +v.toFixed(1) }];
-            if (d.goal.startWeight == null) { d.goal.startWeight = +v.toFixed(1); d.goal.startDate = date; }
-          });
-          toast("Weigh-in saved");
-          sh.close();
-        },
-      }, "Save"));
-    const sh = sheet("Log weigh-in", body);
-    setTimeout(() => wt.focus(), 350);
-  }
+export function openWeighIn() {
+const unit = state.data.settings.units === "metric" ? "kg" : "lb";
+const current = latestWeight();
+  const wt = h("input", { class: "f-input big-input", type: "number", inputmode: "decimal", step: "0.1", placeholder: current != null ? fmt(current, 1) : "0.0" });
+  const dateInput = h("input", { class: "f-input", type: "date", value: todayKey(), max: todayKey() });
+  const body = h("div", { class: "weighin" },
+    h("label", { class: "f-label" }, `Weight (${unit})`), wt,
+    h("label", { class: "f-label" }, "Date"), dateInput,
+    h("button", {
+      class: "btn-primary big", onClick: () => {
+        const v = parseFloat(wt.value);
+        if (!Number.isFinite(v)) { toast("Enter a weight"); return; }
+        const date = dateInput.value || todayKey();
+        mutate((d) => {
+          d.weighIns = [...(d.weighIns || []).filter((w) => w.date !== date), { date, weight: +v.toFixed(1) }];
+          if (d.goal.startWeight == null) { d.goal.startWeight = +v.toFixed(1); d.goal.startDate = date; }
+        });
+        toast("Weigh-in saved");
+        sh.close();
+      },
+    }, "Save"));
+  const sh = sheet("Log weigh-in", body);
+  setTimeout(() => wt.focus(), 350);
 }
