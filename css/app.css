@@ -779,3 +779,12 @@ body { background: var(--bg); }
 .cf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cf-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #c4c9e4; }
 .cf-preview { text-align: center; font-size: 20px; font-weight: 800; color: var(--brand-300); padding: 6px; }
+
+/* Installed-app fix: every screen now starts with its own sticky header that
+   already includes the top safe area, so the scroll area must not add it again
+   (a sticky header sticks below its container's padding, which doubled it). */
+.topbar { margin-top: 0; padding-top: calc(var(--safe-top) + 4px); }
+.tabbar { height: calc(60px + max(var(--safe-bottom) - 12px, 6px)); padding-bottom: max(calc(var(--safe-bottom) - 12px), 6px); }
+.tab { justify-content: flex-start; padding-top: 8px; }
+.fab-float { bottom: calc(60px + max(var(--safe-bottom) - 12px, 6px) + 16px); }
+.scroll { padding-top: 0; padding-bottom: calc(60px + var(--safe-bottom) + 40px); }
